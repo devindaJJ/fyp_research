@@ -55,7 +55,7 @@ flowchart LR
 ## Components
 
 ### 1. Traffic Congestion Detection and Rerouting
-**Developer:** [Peiris I.M (IT22370082]
+**Developer:** Peiris I.M (IT22370082
 
 This component identifies and forecasts traffic congestion using AI and IoT technologies, providing drivers with optimized rerouting recommendations in real-time.
 
@@ -69,7 +69,7 @@ This component identifies and forecasts traffic congestion using AI and IoT tech
 **Technologies:** Machine Learning (Random Forest, SVM, LSTM), Haversine formula, A* algorithm, IoT sensors, GPS, spatial databases
 
 ### 2. Accident Detection and Alert System
-**Developer:** [GUNARATHNA W.D.R.N (T22317230)]
+**Developer:** GUNARATHNA W.D.R.N (T22317230)
 
 An automated accident detection system that identifies vehicle collisions, classifies severity, and triggers immediate emergency response protocols.
 
@@ -99,7 +99,7 @@ Automated detection and logging of traffic violations with real-time AI analysis
 **Technologies:** YOLOv8, TensorFlow, OpenCV, EasyOCR, React.js, voice synthesis
 
 ### 4. Smart Parking Management
-**Developer:** [Jayathilake S.K.A.D.G (IT22363534)]
+**Developer:** Jayathilake S.K.A.D.G (IT22363534)
 
 Intelligent parking monitoring system that detects availability, prevents violations, and assists drivers in finding parking spaces efficiently.
 
@@ -133,8 +133,8 @@ Intelligent parking monitoring system that detects availability, prevents violat
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/urban-traffic-management.git
-cd urban-traffic-management
+https://github.com/devindaJJ/fyp_research.git
+cd fyp_research
 
 # Install dependencies
 npm install  # For frontend components
