@@ -55,7 +55,7 @@ flowchart LR
 ## Components
 
 ### 1. Traffic Congestion Detection and Rerouting
-**Developer:** Peiris I.M (IT22370082
+**Developer:** GUNARATHNA W.D.R.N (T22317230)
 
 This component identifies and forecasts traffic congestion using AI and IoT technologies, providing drivers with optimized rerouting recommendations in real-time.
 
@@ -69,7 +69,7 @@ This component identifies and forecasts traffic congestion using AI and IoT tech
 **Technologies:** Machine Learning (Random Forest, SVM, LSTM), Haversine formula, A* algorithm, IoT sensors, GPS, spatial databases
 
 ### 2. Accident Detection and Alert System
-**Developer:** GUNARATHNA W.D.R.N (T22317230)
+**Developer:** Peiris I.M (IT22370082)
 
 An automated accident detection system that identifies vehicle collisions, classifies severity, and triggers immediate emergency response protocols.
 
