@@ -5,7 +5,7 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 # -------------------------------
 # Configuration
 # -------------------------------
-VIDEO_PATH = "videos/traffic.mp4"  # path to your video
+VIDEO_PATH = "videos/speeding2.mp4"  # path to your video
 DISTANCE_BETWEEN_LINES = 20  # meters (adjust based on camera view)
 SPEED_LIMIT = 60  # km/h
 
