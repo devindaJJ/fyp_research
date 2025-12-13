@@ -1,7 +1,0 @@
-flask
-flask-cors
-gspread
-google-auth
-pandas
-python-dotenv
-requests
