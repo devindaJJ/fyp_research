@@ -34,21 +34,35 @@ while True:
             if conf > 0.3:
                 plate_img = frame[y1:y2, x1:x2]
                 
+                # Check if plate_img is valid
+                if plate_img.size == 0:
+                    continue
+
                 # Preprocess for OCR
                 gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
                 gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
                 _, gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
                 
+                # Show debug windows
+                cv2.imshow("Debug Plate Crop", plate_img)
+                cv2.imshow("Debug OCR Preprocess", gray)
+
                 # OCR detection
                 try:
                     result = reader.readtext(gray)
                     text = ""
                     for detection in result:
                         text += detection[1].replace(" ", "")
+                    
                     # Draw results
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.putText(frame, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                    print("Detected:", text)
+                    
+                    if text.strip():
+                        print(f"Detected: '{text}' (Conf: {conf:.2f})")
+                    else:
+                        print(f"Empty OCR result (Conf: {conf:.2f})")
+                        
                 except Exception as e:
                     print("OCR error:", e)
 

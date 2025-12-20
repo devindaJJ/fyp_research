@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['license-plate']
+
+roboflow:
+  workspace: nethma
+  project: srilankan-number-plates-dmgle
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/nethma/srilankan-number-plates-dmgle/dataset/1
