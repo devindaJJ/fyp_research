@@ -3,13 +3,13 @@ from ultralytics import YOLO
 import easyocr
 
 # Load trained model
-model = YOLO("runs/detect/train/weights/best.pt")
+model = YOLO("models/number_plate_yolo.pt")
 
 # OCR reader
 reader = easyocr.Reader(['en'])
 
 # Video path
-video_path = r"C:\Users\hp\Desktop\Vehicle Speed Detection\fyp_research\videos\speeding2.mp4"
+video_path = r"C:\Users\hp\Desktop\Vehicle Speed Detection\fyp_research\videos\speeding3.mp4"
 cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
