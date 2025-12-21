@@ -9,7 +9,7 @@ model = YOLO(
 
 reader = easyocr.Reader(['en'])
 
-img_path = r"C:\Users\hp\Desktop\Vehicle Speed Detection\fyp_research\videos\speeding4.jpg"
+img_path = r"C:\Users\hp\Desktop\Vehicle Speed Detection\fyp_research\videos\speeding5.jpg"
 img = cv2.imread(img_path)
 
 results = model(img, imgsz=640, conf=0.25)
