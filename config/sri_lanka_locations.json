@@ -1,0 +1,163 @@
+{
+    "major_cities": {
+        "Colombo": {
+            "latitude": 6.9271,
+            "longitude": 79.8612,
+            "center": "Colombo Fort",
+            "major_roads": [
+                "Galle Road",
+                "Baseline Road", 
+                "Marine Drive",
+                "Kandy Road",
+                "Negombo Road"
+            ]
+        },
+        "Kandy": {
+            "latitude": 7.2906,
+            "longitude": 80.6337,
+            "center": "Kandy City Center",
+            "major_roads": [
+                "Kandy-Colombo Road",
+                "Peradeniya Road",
+                "Katugastota Road"
+            ]
+        },
+        "Galle": {
+            "latitude": 6.0535,
+            "longitude": 80.2210,
+            "center": "Galle Fort",
+            "major_roads": [
+                "Galle-Colombo Road",
+                "Matara Road",
+                "Unawatuna Road"
+            ]
+        },
+        "Jaffna": {
+            "latitude": 9.6615,
+            "longitude": 80.0255,
+            "center": "Jaffna Town",
+            "major_roads": [
+                "A9 Highway",
+                "Point Pedro Road",
+                "Chavakachcheri Road"
+            ]
+        },
+        "Negombo": {
+            "latitude": 7.2096,
+            "longitude": 79.8357,
+            "center": "Negombo Beach",
+            "major_roads": [
+                "Negombo-Colombo Road",
+                "Katunayake Road",
+                "Kochchikade Road"
+            ]
+        },
+        "Matara": {
+            "latitude": 5.9480,
+            "longitude": 80.5353,
+            "center": "Matara Town",
+            "major_roads": [
+                "Galle-Matara Road",
+                "Tangalle Road",
+                "Akuressa Road"
+            ]
+        },
+        "Anuradhapura": {
+            "latitude": 8.3114,
+            "longitude": 80.4037,
+            "center": "Sacred City",
+            "major_roads": [
+                "Anuradhapura-Colombo Road",
+                "Trincomalee Road",
+                "Puttalam Road"
+            ]
+        },
+        "Trincomalee": {
+            "latitude": 8.5874,
+            "longitude": 81.2152,
+            "center": "Trincomalee Town",
+            "major_roads": [
+                "Trincomalee-Anuradhapura Road",
+                "Kinniya Road"
+            ]
+        },
+        "Batticaloa": {
+            "latitude": 7.7172,
+            "longitude": 81.7004,
+            "center": "Batticaloa Town",
+            "major_roads": [
+                "Batticaloa-Colombo Road",
+                "Kalkudah Road"
+            ]
+        },
+        "Ratnapura": {
+            "latitude": 6.7057,
+            "longitude": 80.3847,
+            "center": "Ratnapura Town",
+            "major_roads": [
+                "Ratnapura-Colombo Road",
+                "Balangoda Road"
+            ]
+        },
+        "Nuwara Eliya": {
+            "latitude": 6.9497,
+            "longitude": 80.7891,
+            "center": "Nuwara Eliya Town",
+            "major_roads": [
+                "Nuwara Eliya-Kandy Road",
+                "Badulla Road"
+            ]
+        }
+    },
+    
+    "popular_routes": {
+        "colombo_kandy": {
+            "name": "Colombo to Kandy",
+            "start": "Colombo",
+            "end": "Kandy",
+            "normal_time": "3 hours",
+            "distance_km": 115
+        },
+        "colombo_galle": {
+            "name": "Colombo to Galle",
+            "start": "Colombo",
+            "end": "Galle",
+            "normal_time": "2 hours",
+            "distance_km": 116
+        },
+        "colombo_jaffna": {
+            "name": "Colombo to Jaffna",
+            "start": "Colombo",
+            "end": "Jaffna",
+            "normal_time": "8 hours",
+            "distance_km": 400
+        },
+        "kandy_nuwara_eliya": {
+            "name": "Kandy to Nuwara Eliya",
+            "start": "Kandy",
+            "end": "Nuwara Eliya",
+            "normal_time": "2 hours",
+            "distance_km": 75
+        },
+        "colombo_airport": {
+            "name": "Colombo to Airport",
+            "start": "Colombo Fort",
+            "end": "Bandaranaike International Airport",
+            "normal_time": "45 minutes",
+            "distance_km": 35
+        }
+    },
+    
+    "traffic_hotspots": {
+        "colombo": [
+            {"name": "Fort Railway Station", "lat": 6.9344, "lon": 79.8507},
+            {"name": "Pettah Market", "lat": 6.9358, "lon": 79.8500},
+            {"name": "Bambalapitiya Junction", "lat": 6.8958, "lon": 79.8547},
+            {"name": "Nugegoda Junction", "lat": 6.8700, "lon": 79.8917}
+        ],
+        "kandy": [
+            {"name": "Kandy Lake", "lat": 7.2931, "lon": 80.6414},
+            {"name": "Temple of the Tooth", "lat": 7.2947, "lon": 80.6411}
+        ]
+    }
+}
