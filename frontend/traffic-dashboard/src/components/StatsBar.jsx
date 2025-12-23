@@ -27,12 +27,16 @@ const StatsBar = ({ activeTab, onTabChange }) => {
 
             {/* Notification Icon placed next to Emergency Response (the last item) */}
             <div className="stats-notification-container">
-                <div className="notification-bell">
+                <div
+                    className="notification-bell"
+                    onClick={() => onTabChange('Notifications')}
+                    title="View All Notifications"
+                >
                     <Bell size={20} color="#161e54" />
                     {notificationCount > 0 && <span className="stats-badge">{notificationCount}</span>}
 
                     <div className="notification-popup">
-                        <div className="popup-header">Recent Alerts</div>
+                        <div className="popup-header">Recent Alerts (Click to View All)</div>
                         <div className="popup-item">🚨 Speeding detected on Galle Rd</div>
                         <div className="popup-item">⚠️ Traffic congestion at Maradana</div>
                         <div className="popup-item">📸 New violation pending review</div>

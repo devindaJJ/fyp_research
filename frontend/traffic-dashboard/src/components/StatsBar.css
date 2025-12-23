@@ -5,6 +5,8 @@
     padding: 1rem 0;
     border-bottom: 4px solid var(--primary-blue);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    position: relative;
+    z-index: 50;
 }
 
 .stat-item {
