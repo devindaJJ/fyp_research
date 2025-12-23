@@ -5,6 +5,7 @@ import MapSection from './components/MapSection';
 import Analytics from './components/Analytics';
 import Overview from './components/Overview';
 import SplashScreen from './components/SplashScreen';
+import ViolationDetection from './components/ViolationDetection';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -34,7 +35,9 @@ function App() {
         </>
       )}
 
-      {activeTab !== 'Home' && (
+      {activeTab === 'Violation Detection' && <ViolationDetection />}
+
+      {activeTab !== 'Home' && activeTab !== 'Violation Detection' && (
         <div className="section" style={{ textAlign: 'center', padding: '4rem' }}>
           <h2>{activeTab} Module</h2>
           <p>This module is currently under development.</p>
