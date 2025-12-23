@@ -1,0 +1,23 @@
+.app-header {
+    background-color: var(--primary-blue);
+    color: var(--text-white);
+    padding: 2.5rem 2rem;
+    text-align: center;
+}
+
+.header-content h1 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    font-style: italic;
+    letter-spacing: 0.5px;
+}
+
+.header-description {
+    max-width: 800px;
+    margin: 0 auto;
+    font-size: 0.95rem;
+    opacity: 0.9;
+    font-weight: 300;
+    font-style: italic;
+    line-height: 1.4;
+}

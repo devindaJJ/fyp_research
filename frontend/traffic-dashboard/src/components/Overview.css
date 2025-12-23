@@ -1,0 +1,17 @@
+.overview-section {
+    background-color: var(--bg-white);
+    padding-bottom: 4rem;
+    /* Extra space before footer/bottom */
+}
+
+.overview-content {
+    max-width: 900px;
+    font-size: 1rem;
+    color: var(--text-primary);
+    font-style: italic;
+    font-weight: 500;
+}
+
+.overview-content p {
+    margin-bottom: 1rem;
+}
