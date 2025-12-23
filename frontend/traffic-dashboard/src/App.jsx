@@ -1,12 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import StatsBar from './components/StatsBar';
 import MapSection from './components/MapSection';
 import Analytics from './components/Analytics';
 import Overview from './components/Overview';
+import SplashScreen from './components/SplashScreen';
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('Home');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 3800); // 3.5s delay + 0.3s fade out buffer
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (showSplash) {
+    return <SplashScreen />;
+  }
 
   return (
     <div className="dashboard-container">
