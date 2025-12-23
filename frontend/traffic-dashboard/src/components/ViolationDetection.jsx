@@ -164,38 +164,6 @@ const ViolationDetection = () => {
                         <p>View historical logs and archived violation records.</p>
                     </div>
                 );
-            case 'notifications':
-                return (
-                    <div className="notifications-view">
-                        <h3>Recent Notifications</h3>
-                        <div className="notif-list">
-                            <div className="notif-item unread">
-                                <span className="notif-icon">🚨</span>
-                                <div>
-                                    <h4>Speeding Detected</h4>
-                                    <p>Vehicle WP CAM-1234 exceeded limit on Galle Rd.</p>
-                                    <span className="time">2 mins ago</span>
-                                </div>
-                            </div>
-                            <div className="notif-item unread">
-                                <span className="notif-icon">⚠️</span>
-                                <div>
-                                    <h4>Congestion Alert</h4>
-                                    <p>Heavy traffic detected at Maradana Junction.</p>
-                                    <span className="time">15 mins ago</span>
-                                </div>
-                            </div>
-                            <div className="notif-item">
-                                <span className="notif-icon">📸</span>
-                                <div>
-                                    <h4>New Evidence Uploaded</h4>
-                                    <p>Evidence pending review for Violation #V004.</p>
-                                    <span className="time">1 hour ago</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
             default:
                 return null;
         }
@@ -233,15 +201,6 @@ const ViolationDetection = () => {
                     >
                         <History size={18} />
                         History
-                    </button>
-                    <button
-                        className={`toggle-btn ${viewMode === 'notifications' ? 'active' : ''}`}
-                        onClick={() => setViewMode('notifications')}
-                        style={{ position: 'relative' }}
-                    >
-                        <Bell size={18} />
-                        Notifications
-                        {notificationCount > 0 && <span className="btn-badge">{notificationCount}</span>}
                     </button>
                 </div>
             </div>

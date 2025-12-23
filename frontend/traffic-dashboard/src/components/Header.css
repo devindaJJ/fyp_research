@@ -1,13 +1,14 @@
-.app-header {
-    background-color: var(--primary-blue);
-    color: var(--text-white);
+.header {
+    background-color: #161e54;
+    /* Explicit fallback or match primary-blue */
+    color: white;
     padding: 2.5rem 2rem;
     text-align: center;
 }
 
 .header-content h1 {
     font-size: 2rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
     font-style: italic;
     letter-spacing: 0.5px;
 }
@@ -16,92 +17,14 @@
     max-width: 1440px;
     margin: 0 auto;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.header-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-
-.notification-bell {
-    position: relative;
-    cursor: pointer;
-    padding: 8px;
-    border-radius: 50%;
-    transition: background 0.2s;
-}
-
-.notification-bell:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-.badge {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    background-color: #ff4757;
-    color: white;
-    font-size: 0.7rem;
-    font-weight: bold;
-    height: 16px;
-    width: 16px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
     justify-content: center;
-    border: 1px solid #161e54;
+    /* Centered layout for simple header */
+    align-items: center;
 }
 
-.notification-popup {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    width: 300px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-    display: none;
-    z-index: 1001;
-    overflow: hidden;
-    color: #333;
-}
-
-.notification-bell:hover .notification-popup {
-    display: block;
-}
-
-.popup-header {
-    background: #f1f2f6;
-    padding: 10px 15px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    border-bottom: 1px solid #e1e1e1;
-}
-
-.popup-item {
-    padding: 12px 15px;
-    border-bottom: 1px solid #f1f1f1;
-    font-size: 0.85rem;
-    cursor: pointer;
-}
-
-.popup-item:hover {
-    background: #f8f9fa;
-}
-
-.popup-item:last-child {
-    border-bottom: none;
-}
-
-.header-description {
-    max-width: 800px;
-    margin: 0 auto;
+.header-content p {
     font-size: 0.95rem;
     opacity: 0.9;
     font-weight: 300;
     font-style: italic;
-    line-height: 1.4;
 }
