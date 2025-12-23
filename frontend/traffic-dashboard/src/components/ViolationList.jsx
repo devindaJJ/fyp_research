@@ -3,7 +3,7 @@ import { Search, Filter, Eye } from 'lucide-react';
 import EvidenceModal from './EvidenceModal';
 import './ViolationList.css';
 
-const MOCK_DATA = [
+const INITIAL_DATA = [
     { id: 'V001', plate: 'WP CAM-1234', type: 'Speeding', speed: '85 km/h', limit: '60 km/h', location: 'Galle Road, Colombo 3', date: '2025-10-24 14:30', status: 'Pending' },
     { id: 'V002', plate: 'WP CAB-5678', type: 'Lane Violation', speed: '-', limit: '-', location: 'Duplication Road', date: '2025-10-24 12:15', status: 'Reviewed' },
     { id: 'V003', plate: 'SP BCD-9988', type: 'Speeding', speed: '72 km/h', limit: '50 km/h', location: 'High Level Road', date: '2025-10-23 09:45', status: 'Pending' },
@@ -13,12 +13,23 @@ const MOCK_DATA = [
 ];
 
 const ViolationList = () => {
+    const [violations, setViolations] = useState(INITIAL_DATA);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('All');
     const [filterLocation, setFilterLocation] = useState('All');
     const [selectedViolation, setSelectedViolation] = useState(null);
 
-    const filteredData = MOCK_DATA.filter(item => {
+    const handleMarkReviewed = (id) => {
+        setViolations(prev => prev.map(v =>
+            v.id === id ? { ...v, status: 'Reviewed' } : v
+        ));
+        // Also update the selected violation if it's the one being reviewed
+        if (selectedViolation && selectedViolation.id === id) {
+            setSelectedViolation(prev => ({ ...prev, status: 'Reviewed' }));
+        }
+    };
+
+    const filteredData = violations.filter(item => {
         const matchesSearch = item.plate.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesType = filterType === 'All' || item.type === filterType;
         const matchesLocation = filterLocation === 'All' || item.location.includes(filterLocation);
@@ -128,6 +139,7 @@ const ViolationList = () => {
                 <EvidenceModal
                     violation={selectedViolation}
                     onClose={() => setSelectedViolation(null)}
+                    onReview={handleMarkReviewed}
                 />
             )}
         </div>

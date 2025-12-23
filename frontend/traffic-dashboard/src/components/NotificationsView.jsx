@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './NotificationsView.css';
-import { Bell, AlertTriangle, Camera, Info, CheckCircle } from 'lucide-react';
+import { Bell, AlertTriangle, Info, CheckCircle } from 'lucide-react';
 
-const NOTIFICATIONS_DATA = [
+const INITIAL_NOTIFICATIONS = [
     { id: 1, type: 'alert', title: 'Speeding Detected', message: 'Vehicle WP CAM-1234 exceeded limit on Galle Rd.', time: '2 mins ago', read: false },
     { id: 2, type: 'warning', title: 'Congestion Alert', message: 'Heavy traffic detected at Maradana Junction.', time: '15 mins ago', read: false },
     { id: 3, type: 'info', title: 'New Evidence Uploaded', message: 'Evidence pending review for Violation #V004.', time: '1 hour ago', read: true },
@@ -11,6 +11,14 @@ const NOTIFICATIONS_DATA = [
 ];
 
 const NotificationsView = () => {
+    const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+
+    const markAsRead = (id) => {
+        setNotifications(prev => prev.map(notif =>
+            notif.id === id ? { ...notif, read: true } : notif
+        ));
+    };
+
     const getIcon = (type) => {
         switch (type) {
             case 'alert': return <Bell size={20} color="#e74c3c" />;
@@ -24,12 +32,15 @@ const NotificationsView = () => {
         <div className="notifications-page section">
             <div className="section-header-row">
                 <h2 className="section-title">All Notifications</h2>
-                <button className="btn secondary">Mark all as read</button>
             </div>
 
             <div className="notifications-container">
-                {NOTIFICATIONS_DATA.map((item) => (
-                    <div key={item.id} className={`notification-card ${item.read ? 'read' : 'unread'}`}>
+                {notifications.map((item) => (
+                    <div
+                        key={item.id}
+                        className={`notification-card ${item.read ? 'read' : 'unread'}`}
+                        onClick={() => markAsRead(item.id)}
+                    >
                         <div className="notif-icon-wrapper">
                             {getIcon(item.type)}
                         </div>

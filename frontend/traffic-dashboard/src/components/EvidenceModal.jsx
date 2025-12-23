@@ -1,17 +1,24 @@
 import React from 'react';
-import { X, Play, ZoomIn } from 'lucide-react';
+import { X, Play, ZoomIn, CheckCircle } from 'lucide-react';
 import './EvidenceModal.css';
 import evidenceImg from '../assets/evidence_mock.png';
 
-const EvidenceModal = ({ violation, onClose }) => {
+const EvidenceModal = ({ violation, onClose, onReview }) => {
     if (!violation) return null;
+
+    const isReviewed = violation.status === 'Reviewed';
 
     return (
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal-container" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                     <div>
-                        <h3>Violation Evidence: {violation.id}</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <h3>Violation Evidence: {violation.id}</h3>
+                            <span className={`status-badge ${violation.status.toLowerCase()}`}>
+                                {violation.status}
+                            </span>
+                        </div>
                         <span className="modal-date">{violation.date} • {violation.location}</span>
                     </div>
                     <button className="close-btn" onClick={onClose}>
@@ -73,7 +80,14 @@ const EvidenceModal = ({ violation, onClose }) => {
 
                 <div className="modal-footer">
                     <button className="btn secondary" onClick={onClose}>Close</button>
-                    <button className="btn primary">Generate Report</button>
+                    {!isReviewed && (
+                        <button
+                            className="btn primary"
+                            onClick={() => onReview(violation.id)}
+                        >
+                            Mark as Reviewed
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
