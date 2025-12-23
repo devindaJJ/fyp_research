@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Filter, Eye } from 'lucide-react';
+import EvidenceModal from './EvidenceModal';
 import './ViolationList.css';
 
 const MOCK_DATA = [
@@ -15,6 +16,7 @@ const ViolationList = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('All');
     const [filterLocation, setFilterLocation] = useState('All');
+    const [selectedViolation, setSelectedViolation] = useState(null);
 
     const filteredData = MOCK_DATA.filter(item => {
         const matchesSearch = item.plate.toLowerCase().includes(searchTerm.toLowerCase());
@@ -100,7 +102,11 @@ const ViolationList = () => {
                                     </span>
                                 </td>
                                 <td>
-                                    <button className="action-btn" title="View Details">
+                                    <button
+                                        className="action-btn"
+                                        title="View Details"
+                                        onClick={() => setSelectedViolation(row)}
+                                    >
                                         <Eye size={18} />
                                     </button>
                                 </td>
@@ -116,6 +122,14 @@ const ViolationList = () => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Evidence Modal */}
+            {selectedViolation && (
+                <EvidenceModal
+                    violation={selectedViolation}
+                    onClose={() => setSelectedViolation(null)}
+                />
+            )}
         </div>
     );
 };

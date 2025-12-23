@@ -2,17 +2,19 @@ import React from 'react';
 import './StatsBar.css';
 
 const StatsBar = ({ activeTab, onTabChange }) => {
-    const stats = [
+    const tabs = [
         'Home',
         'Traffic Monitoring',
+        'Violation Detection',
         'Smart Parking',
         'Emergency Response',
-        'Violation Detection',
+        'Reports',
+        'History'
     ];
 
     return (
         <div className="stats-bar">
-            {stats.map((label) => (
+            {tabs.map((label) => (
                 <div
                     key={label}
                     className={`stat-item ${activeTab === label ? 'active' : ''}`}

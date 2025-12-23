@@ -1,15 +1,29 @@
-import React from 'react';
-import './Header.css'; // We can use inline or a separate file. I'll use inline style objects or utility classes defined in index.css if simple. Or Create a CSS module?
-// Let's use vanilla CSS in a separate file or just keep it simple with classes.
+import React, { useState } from 'react';
+import './Header.css';
+import { Bell } from 'lucide-react';
 
 const Header = () => {
+    const [notifications] = useState(3); // Mock notification count
+
     return (
-        <header className="app-header">
+        <header className="header">
             <div className="header-content">
-                <h1>Urban Traffic Management System</h1>
-                <p className="header-description">
-                    An Urban Traffic Management System helps control traffic in the city. It reduces traffic jams, prevents accidents, and makes travel easier. The system uses traffic lights, cameras, and sensors to keep roads safe and smooth.
-                </p>
+                <div>
+                    <h1>Urban Traffic Management System</h1>
+                    <p>Real-time traffic monitoring and analysis dashboard</p>
+                </div>
+                <div className="header-actions">
+                    <div className="notification-bell">
+                        <Bell color="white" size={24} />
+                        {notifications > 0 && <span className="badge">{notifications}</span>}
+                        <div className="notification-popup">
+                            <div className="popup-header">Recent Alerts</div>
+                            <div className="popup-item">🚨 Speeding detected on Galle Rd</div>
+                            <div className="popup-item">⚠️ Traffic congestion at Maradana</div>
+                            <div className="popup-item">📸 New violation pending review</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </header>
     );
