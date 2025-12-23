@@ -7,9 +7,7 @@ const StatsBar = ({ activeTab, onTabChange }) => {
         'Traffic Monitoring',
         'Violation Detection',
         'Smart Parking',
-        'Emergency Response',
-        'Reports',
-        'History'
+        'Emergency Response'
     ];
 
     return (
