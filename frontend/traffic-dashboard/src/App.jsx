@@ -7,6 +7,8 @@ import SplashScreen from './components/SplashScreen';
 import ViolationDetection from './components/ViolationDetection';
 import NotificationsView from './components/NotificationsView';
 
+import SmartParking from './components/SmartParking';
+
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('Home');
@@ -39,10 +41,12 @@ function App() {
 
         {activeTab === 'Violation Detection' && <ViolationDetection />}
 
+        {activeTab === 'Smart Parking' && <SmartParking />}
+
         {activeTab === 'Notifications' && <NotificationsView />}
 
         {/* Placeholders for other tabs */}
-        {(activeTab === 'Traffic Monitoring' || activeTab === 'Smart Parking' || activeTab === 'Emergency Response') && (
+        {(activeTab === 'Traffic Monitoring' || activeTab === 'Emergency Response') && (
           <div className="placeholder-section">
             <h2>{activeTab}</h2>
             <p>Module under development.</p>
