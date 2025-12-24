@@ -285,3 +285,226 @@
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
 }
+
+/* Details Page Layout */
+.parking-overview-container {
+    display: flex;
+    gap: 30px;
+    height: 100%;
+}
+
+.details-left-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.details-right-panel {
+    flex: 2;
+    background: rgba(30, 41, 59, 0.5);
+    border-radius: 20px;
+    padding: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.back-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #94a3b8;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    margin-bottom: 10px;
+    transition: color 0.2s;
+}
+
+.back-btn:hover {
+    color: #fff;
+}
+
+.location-header h2 {
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.location-address {
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.summary-card {
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.summary-card.total {
+    border-left: 4px solid #6366f1;
+}
+
+.summary-card.available {
+    border-left: 4px solid #10b981;
+}
+
+.summary-card.reserved {
+    border-left: 4px solid #3b82f6;
+}
+
+.summary-card.disabled {
+    border-left: 4px solid #475569;
+}
+
+.summary-label {
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.summary-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+/* Slots Grid */
+.grid-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.legend {
+    display: flex;
+    gap: 16px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.dot.available {
+    background: #10b981;
+}
+
+.dot.occupied {
+    background: #ef4444;
+}
+
+.dot.reserved {
+    background: #3b82f6;
+}
+
+.dot.disabled {
+    background: #475569;
+}
+
+.slots-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 12px;
+}
+
+.parking-slot {
+    aspect-ratio: 1;
+    background: #0f172a;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.parking-slot.available {
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #10b981;
+}
+
+.parking-slot.occupied {
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.parking-slot.reserved {
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #3b82f6;
+}
+
+.parking-slot.disabled {
+    border-color: rgba(71, 85, 105, 0.3);
+    color: #475569;
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.parking-slot:hover:not(.disabled) {
+    transform: translateY(-4px);
+    background: #1e293b;
+}
+
+.parking-slot.active {
+    background: #1e293b;
+    box-shadow: 0 0 0 2px #fff;
+}
+
+.slot-tooltip {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 12px;
+    width: 200px;
+    z-index: 10;
+    pointer-events: none;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+}
+
+.tooltip-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+
+.tooltip-label {
+    color: #94a3b8;
+}
+
+.tooltip-value {
+    color: #fff;
+    font-weight: 600;
+}
