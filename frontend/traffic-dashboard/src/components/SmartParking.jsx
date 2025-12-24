@@ -133,7 +133,7 @@ function MapViewUpdater({ center, zoom }) {
 }
 
 const SmartParking = () => {
-    const [view, setView] = useState('map'); // 'map' or 'details'
+    const [view, setView] = useState('map'); // 'map', 'details', or 'search'
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [vehicleType, setVehicleType] = useState("All");
@@ -142,6 +142,9 @@ const SmartParking = () => {
     const [mapZoom, setMapZoom] = useState(13);
     const [activeSlot, setActiveSlot] = useState(null);
     const [slots, setSlots] = useState([]);
+    const [searchPlate, setSearchPlate] = useState("");
+    const [searchResult, setSearchResult] = useState(null);
+    const [hasSearched, setHasSearched] = useState(false);
 
     const filteredLocations = parkingLocations.filter(loc => {
         const matchesSearch = loc.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -153,6 +156,30 @@ const SmartParking = () => {
         setSelectedLocation(loc);
         setSlots(generateSlots(40)); // Generate slots for the demo
         setView('details');
+    };
+
+    const handleVehicleSearch = () => {
+        setHasSearched(true);
+        if (!searchPlate.trim()) {
+            setSearchResult(null);
+            return;
+        }
+
+        // Mock search logic: 50% chance to find it in a random location
+        const found = Math.random() > 0.3;
+        if (found) {
+            const loc = parkingLocations[Math.floor(Math.random() * parkingLocations.length)];
+            setSearchResult({
+                plate: searchPlate.toUpperCase(),
+                location: loc.name,
+                slot: `${String.fromCharCode(65 + Math.floor(Math.random() * 5))}${Math.floor(Math.random() * 20 + 1)}`,
+                parkedAt: "08:42 AM",
+                duration: "1h 25m",
+                status: "Active"
+            });
+        } else {
+            setSearchResult(null);
+        }
     };
 
     const handleSearchChange = (e) => {
@@ -167,6 +194,78 @@ const SmartParking = () => {
             setMapZoom(13);
         }
     };
+
+    if (view === 'search') {
+        return (
+            <div className="smart-parking-container">
+                <button className="back-btn" onClick={() => setView('map')}>
+                    <ArrowLeft size={18} /> Back to Live Map
+                </button>
+
+                <div className="vehicle-search-view">
+                    <div className="search-header">
+                        <h2>Vehicle Locator</h2>
+                        <p>Enter a vehicle number plate to find its current parking location and status.</p>
+                    </div>
+
+                    <div className="search-input-wrapper">
+                        <input
+                            type="text"
+                            className="big-search-input"
+                            placeholder="e.g. WP CAA-1234"
+                            value={searchPlate}
+                            onChange={(e) => setSearchPlate(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleVehicleSearch()}
+                        />
+                        <button className="big-search-btn" onClick={handleVehicleSearch}>
+                            <Search size={22} /> Find Vehicle
+                        </button>
+                    </div>
+
+                    {hasSearched && searchResult ? (
+                        <div className="result-card">
+                            <div className="result-header">
+                                <h3>Search Result</h3>
+                                <div className="status-badge active">
+                                    <div className="pulse"></div> {searchResult.status}
+                                </div>
+                            </div>
+                            <div className="result-grid">
+                                <div className="result-item">
+                                    <span className="result-label">Vehicle Number</span>
+                                    <span className="result-value">{searchResult.plate}</span>
+                                </div>
+                                <div className="result-item">
+                                    <span className="result-label">Parking Location</span>
+                                    <span className="result-value">{searchResult.location}</span>
+                                </div>
+                                <div className="result-item">
+                                    <span className="result-label">Assigned Slot</span>
+                                    <span className="result-value">{searchResult.slot}</span>
+                                </div>
+                                <div className="result-item">
+                                    <span className="result-label">Parked At</span>
+                                    <span className="result-value">{searchResult.parkedAt}</span>
+                                </div>
+                                <div className="result-item">
+                                    <span className="result-label">Parking Duration</span>
+                                    <span className="result-value">{searchResult.duration}</span>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        hasSearched && (
+                            <div className="not-found-card">
+                                <X size={48} color="#ef4444" />
+                                <p>No active parking record found for "{searchPlate}"</p>
+                                <span style={{ color: '#64748b', fontSize: '14px' }}>Please check the vehicle number and try again.</span>
+                            </div>
+                        )
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     if (view === 'details' && selectedLocation) {
         return (
@@ -308,12 +407,22 @@ const SmartParking = () => {
                     </div>
                 </div>
 
-                <div
-                    className={`refresh-toggle ${isAutoRefresh ? 'active' : ''}`}
-                    onClick={() => setIsAutoRefresh(!isAutoRefresh)}
-                >
-                    <RefreshCw size={16} className={isAutoRefresh ? 'animate-spin' : ''} style={{ color: isAutoRefresh ? '#3b82f6' : '#64748b' }} />
-                    <span>Auto-refresh: {isAutoRefresh ? 'ON' : 'OFF'}</span>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <button
+                        className="details-btn"
+                        style={{ padding: '8px 20px', fontSize: '14px', whiteSpace: 'nowrap' }}
+                        onClick={() => setView('search')}
+                    >
+                        <Search size={16} /> Locate Vehicle
+                    </button>
+
+                    <div
+                        className={`refresh-toggle ${isAutoRefresh ? 'active' : ''}`}
+                        onClick={() => setIsAutoRefresh(!isAutoRefresh)}
+                    >
+                        <RefreshCw size={16} className={isAutoRefresh ? 'animate-spin' : ''} style={{ color: isAutoRefresh ? '#3b82f6' : '#64748b' }} />
+                        <span>Auto-refresh: {isAutoRefresh ? 'ON' : 'OFF'}</span>
+                    </div>
                 </div>
             </div>
 

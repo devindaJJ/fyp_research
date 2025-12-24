@@ -508,3 +508,163 @@
     color: #fff;
     font-weight: 600;
 }
+
+/* Vehicle Search View */
+.vehicle-search-view {
+    max-width: 800px;
+    margin: 40px auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.search-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.search-header h2 {
+    font-size: 32px;
+    margin-bottom: 12px;
+}
+
+.search-header p {
+    color: #94a3b8;
+}
+
+.search-input-wrapper {
+    display: flex;
+    gap: 12px;
+    background: rgba(30, 41, 59, 0.7);
+    padding: 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.big-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 16px 20px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.big-search-input:focus {
+    outline: none;
+}
+
+.big-search-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 0 30px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.big-search-btn:hover {
+    background: #2563eb;
+    transform: scale(1.02);
+}
+
+.result-card {
+    background: #1e293b;
+    border-radius: 24px;
+    padding: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    animation: slideInUp 0.4s ease-out;
+}
+
+@keyframes slideInUp {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 20px;
+}
+
+.result-header h3 {
+    font-size: 24px;
+    color: #fff;
+    margin: 0;
+}
+
+.result-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 30px;
+}
+
+.result-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.result-label {
+    font-size: 13px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.result-value {
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.status-badge.active {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.not-found-card {
+    text-align: center;
+    padding: 60px;
+    background: rgba(239, 68, 68, 0.05);
+    border-radius: 24px;
+    border: 1px dashed rgba(239, 68, 68, 0.3);
+}
+
+.not-found-card p {
+    color: #ef4444;
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 10px;
+}
