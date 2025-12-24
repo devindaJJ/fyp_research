@@ -9,7 +9,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-# Load environment variables
 load_dotenv()
 
 # Add src to path for imports
@@ -33,7 +32,7 @@ class UrbanTrafficSystem:
         self.api_key = os.getenv('GOOGLE_MAPS_API_KEY')
         
         if not self.api_key:
-            console.print("[red]❌ ERROR: Google Maps API key not found![/red]")
+            console.print("[red]ERROR: Google Maps API key not found![/red]")
             console.print("[yellow]Please create a .env file with:[/yellow]")
             console.print("[cyan]GOOGLE_MAPS_API_KEY=your_key_here[/cyan]")
             exit(1)
@@ -44,15 +43,15 @@ class UrbanTrafficSystem:
         self.traffic_analyzer = TrafficAnalyzer(self.gmaps_client)
         self.route_optimizer = RouteOptimizer(self.gmaps_client)
         
-        console.print("[green]✅ Urban Traffic System Initialized[/green]")
-        console.print("[cyan]📍 Automatic location detection enabled[/cyan]")
+        console.print("[green]Urban Traffic System Initialized[/green]")
+        console.print("[cyan]Automatic location detection enabled[/cyan]")
     
     def analyze_route_with_auto_location(self, destination: str) -> Optional[TrafficAnalysis]:
         """
         Automatically detect current location and analyze route to destination.
         Returns comprehensive traffic analysis.
         """
-        console.print(f"\n[bold cyan]📍 AUTOMATIC ROUTE ANALYSIS[/bold cyan]")
+        console.print(f"\n[bold cyan]AUTOMATIC ROUTE ANALYSIS[/bold cyan]")
         console.print(f"[yellow]Destination: {destination}[/yellow]")
         
         with Progress(
@@ -65,11 +64,11 @@ class UrbanTrafficSystem:
             current_location = self.location_service.detect_current_location()
             
             if not current_location:
-                console.print("[red]❌ Could not detect your current location[/red]")
+                console.print("[red]Could not detect your current location[/red]")
                 console.print("[yellow]Please enter your starting location manually[/yellow]")
                 return None
             
-            console.print(f"[green]✅ Location detected: {current_location.address}[/green]")
+            console.print(f"[green]Location detected: {current_location.address}[/green]")
             
             # Step 2: Analyze route
             progress.add_task("Analyzing traffic conditions...", total=None)
@@ -83,24 +82,24 @@ class UrbanTrafficSystem:
     def display_analysis_results(self, analysis: TrafficAnalysis):
         """Display traffic analysis results in a user-friendly format."""
         console.print(f"\n[bold cyan]{'='*70}[/bold cyan]")
-        console.print(f"[bold green]🚗 TRAFFIC ANALYSIS REPORT[/bold green]")
+        console.print(f"[bold green]TRAFFIC ANALYSIS REPORT[/bold green]")
         console.print(f"[bold cyan]{'='*70}[/bold cyan]")
         
         # Route Information
         route_table = Table(show_header=False, box=None)
-        route_table.add_row("📍 [bold]From:[/bold]", f"[cyan]{analysis.primary_route.origin}[/cyan]")
-        route_table.add_row("📍 [bold]To:[/bold]", f"[cyan]{analysis.primary_route.destination}[/cyan]")
-        route_table.add_row("🕐 [bold]Analysis Time:[/bold]", f"[yellow]{analysis.analysis_time.strftime('%Y-%m-%d %H:%M:%S')}[/yellow]")
+        route_table.add_row("[bold]From:[/bold]", f"[cyan]{analysis.primary_route.origin}[/cyan]")
+        route_table.add_row("[bold]To:[/bold]", f"[cyan]{analysis.primary_route.destination}[/cyan]")
+        route_table.add_row("[bold]Analysis Time:[/bold]", f"[yellow]{analysis.analysis_time.strftime('%Y-%m-%d %H:%M:%S')}[/yellow]")
         console.print(route_table)
         
         # Current Traffic Conditions
         current_traffic = Panel(
-            f"[bold]{analysis.congestion_level.get_emoji()} {analysis.congestion_level.get_description()}[/bold]\n\n"
-            f"📏 Distance: {analysis.primary_route.distance_text}\n"
-            f"⏱️ Normal Time: {analysis.primary_route.normal_duration:.1f} minutes\n"
-            f"🚦 Current Time: {analysis.primary_route.traffic_duration:.1f} minutes\n"
-            f"⚠️ Delay: {analysis.delay_minutes:.1f} minutes ({analysis.primary_route.delay_percentage:.1f}% increase)\n"
-            f"🛣️ Primary Route: {analysis.primary_route.summary}",
+            f"[bold]{analysis.congestion_level.get_description()}[/bold]\n\n"
+            f"Distance: {analysis.primary_route.distance_text}\n"
+            f"Normal Time: {analysis.primary_route.normal_duration:.1f} minutes\n"
+            f"Current Time: {analysis.primary_route.traffic_duration:.1f} minutes\n"
+            f"Delay: {analysis.delay_minutes:.1f} minutes ({analysis.primary_route.delay_percentage:.1f}% increase)\n"
+            f"Primary Route: {analysis.primary_route.summary}",
             title="Current Traffic Conditions",
             border_style="green" if analysis.congestion_level.value == "light" else 
                         "yellow" if analysis.congestion_level.value == "moderate" else
@@ -118,13 +117,12 @@ class UrbanTrafficSystem:
             alt_table.add_column("Traffic", style="magenta")
             
             for i, alt in enumerate(analysis.alternatives, 1):
-                traffic_emoji = alt.traffic_level.get_emoji()
                 alt_table.add_row(
                     str(i),
                     alt.summary[:30] + "..." if len(alt.summary) > 30 else alt.summary,
                     f"{alt.traffic_duration:.1f} min",
                     f"{alt.delay_minutes:.1f} min",
-                    f"{traffic_emoji} {alt.traffic_level.name.title()}"
+                    f"{alt.traffic_level.name.title()}"
                 )
             
             console.print(alt_table)
@@ -133,18 +131,17 @@ class UrbanTrafficSystem:
         if analysis.should_reroute:
             if analysis.recommended_alternative:
                 recommendation = Panel(
-                    f"[bold green]✅ RECOMMENDATION: Take Alternative Route[/bold green]\n\n"
+                    f"[bold green]RECOMMENDATION: Take Alternative Route[/bold green]\n\n"
                     f"Route: [cyan]{analysis.recommended_alternative.summary}[/cyan]\n"
                     f"Estimated Savings: [green]{analysis.delay_minutes - analysis.recommended_alternative.delay_minutes:.1f} minutes[/green]\n"
                     f"New Travel Time: [yellow]{analysis.recommended_alternative.traffic_duration:.1f} minutes[/yellow]\n"
-                    f"Traffic Level: {analysis.recommended_alternative.traffic_level.get_emoji()} "
-                    f"{analysis.recommended_alternative.traffic_level.name.title()}",
+                    f"Traffic Level: {analysis.recommended_alternative.traffic_level.name.title()}",
                     title="Optimization Suggestion",
                     border_style="green"
                 )
             else:
                 recommendation = Panel(
-                    f"[bold yellow]⚠️ RECOMMENDATION: Consider Delaying Your Trip[/bold yellow]\n\n"
+                    f"[bold yellow]RECOMMENDATION: Consider Delaying Your Trip[/bold yellow]\n\n"
                     f"All alternative routes also have heavy traffic.\n"
                     f"Waiting 30-60 minutes might improve conditions.",
                     title="Optimization Suggestion",
@@ -152,7 +149,7 @@ class UrbanTrafficSystem:
                 )
         else:
             recommendation = Panel(
-                f"[bold green]✅ RECOMMENDATION: Continue on Current Route[/bold green]\n\n"
+                f"[bold green]RECOMMENDATION: Continue on Current Route[/bold green]\n\n"
                 f"Traffic conditions are acceptable.\n"
                 f"No significant time savings from alternative routes.",
                 title="Optimization Suggestion",
@@ -164,7 +161,7 @@ class UrbanTrafficSystem:
     
     def get_user_destination(self) -> str:
         """Get destination input from user with suggestions."""
-        console.print("\n[bold cyan]🎯 ENTER DESTINATION[/bold cyan]")
+        console.print("\n[bold cyan]ENTER DESTINATION[/bold cyan]")
         console.print("[yellow]Examples:[/yellow]")
         console.print("  • Galle Fort, Sri Lanka")
         console.print("  • Kandy City Center")
@@ -174,7 +171,7 @@ class UrbanTrafficSystem:
         destination = console.input("\n[cyan]Where do you want to go? [/cyan]").strip()
         
         if not destination:
-            console.print("[red]❌ Destination cannot be empty[/red]")
+            console.print("[red]Destination cannot be empty[/red]")
             return self.get_user_destination()
         
         # Add Sri Lanka if not specified
@@ -192,11 +189,10 @@ class UrbanTrafficSystem:
             if analysis:
                 self.display_analysis_results(analysis)
                 
-                # Offer detailed advice
                 if console.input("\nView detailed rerouting advice? (y/n): ").lower() == 'y':
                     advice = self.traffic_analyzer.get_detailed_reroute_advice(analysis)
                     
-                    console.print("\n[bold cyan]📋 DETAILED REROUTING ADVICE[/bold cyan]")
+                    console.print("\n[bold cyan]DETAILED REROUTING ADVICE[/bold cyan]")
                     for key, value in advice.items():
                         if isinstance(value, list):
                             console.print(f"[yellow]{key.replace('_', ' ').title()}:[/yellow]")
@@ -211,12 +207,12 @@ class UrbanTrafficSystem:
             
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
-            console.print(f"[red]❌ Analysis failed: {str(e)}[/red]")
+            console.print(f"[red]Analysis failed: {str(e)}[/red]")
     
     def run_continuous_monitoring(self, destination: str, interval_minutes: int = 10):
         """Continuously monitor a route and alert on changes."""
-        console.print(f"\n[bold green]📡 STARTING CONTINUOUS MONITORING[/bold green]")
-        console.print(f"🔄 Update interval: {interval_minutes} minutes")
+        console.print(f"\n[bold green]STARTING CONTINUOUS MONITORING[/bold green]")
+        console.print(f"Update interval: {interval_minutes} minutes")
         console.print("[yellow]Press Ctrl+C to stop[/yellow]\n")
         
         previous_analysis = None
@@ -227,12 +223,11 @@ class UrbanTrafficSystem:
                 
                 if analysis:
                     if previous_analysis:
-                        # Check for significant changes
                         delay_change = analysis.delay_minutes - previous_analysis.delay_minutes
                         traffic_change = (analysis.congestion_level != previous_analysis.congestion_level)
                         
                         if abs(delay_change) > 5 or traffic_change:
-                            console.print(f"\n[bold yellow]⚠️ TRAFFIC CONDITIONS CHANGED[/bold yellow]")
+                            console.print(f"\n[bold yellow]TRAFFIC CONDITIONS CHANGED[/bold yellow]")
                             console.print(f"Time: {datetime.now().strftime('%H:%M:%S')}")
                             console.print(f"Delay Change: {'+' if delay_change > 0 else ''}{delay_change:.1f} minutes")
                             console.print(f"New Traffic Level: {analysis.congestion_level.name.title()}")
@@ -244,43 +239,43 @@ class UrbanTrafficSystem:
                     time_str = datetime.now().strftime("%H:%M:%S")
                     console.print(f"[cyan]{time_str}[/cyan] - "
                                  f"Delay: [bold]{analysis.delay_minutes:.1f} min[/bold] - "
-                                 f"Traffic: {analysis.congestion_level.get_emoji()} {analysis.congestion_level.name.title()}")
+                                 f"Traffic: {analysis.congestion_level.name.title()}")
                     
                     previous_analysis = analysis
                 
                 time.sleep(interval_minutes * 60)
                 
         except KeyboardInterrupt:
-            console.print(f"\n[yellow]🛑 Monitoring stopped[/yellow]")
+            console.print(f"\n[yellow]Monitoring stopped[/yellow]")
     
     def show_main_menu(self):
         """Display the main menu."""
         console.print(Panel.fit(
-            "[bold cyan]🇱🇰 URBAN TRAFFIC SYSTEM - SRI LANKA[/bold cyan]\n"
+            "[bold cyan]URBAN TRAFFIC SYSTEM - SRI LANKA[/bold cyan]\n"
             "[yellow]Automatic Location Detection & Smart Routing[/yellow]",
             border_style="green"
         ))
         
         menu_table = Table(show_header=False, box=None)
-        menu_table.add_row("1️⃣", "Analyze route to destination (auto-location)")
-        menu_table.add_row("2️⃣", "Monitor route continuously")
-        menu_table.add_row("3️⃣", "Compare multiple destinations")
-        menu_table.add_row("4️⃣", "Get current location info")
-        menu_table.add_row("5️⃣", "Exit")
+        menu_table.add_row("1", "Analyze route to destination (auto-location)")
+        menu_table.add_row("2", "Monitor route continuously")
+        menu_table.add_row("3", "Compare multiple destinations")
+        menu_table.add_row("4", "Get current location info")
+        menu_table.add_row("5", "Exit")
         
         console.print(menu_table)
     
     def run(self):
         """Run the main application loop."""
-        console.print("[green]🚀 Starting Urban Traffic System...[/green]")
+        console.print("[green]Starting Urban Traffic System...[/green]")
         
         # Test API connection
         try:
             test_location = self.location_service.detect_current_location()
             if test_location:
-                console.print(f"[green]✅ System ready. Your location: {test_location.city}[/green]")
+                console.print(f"[green]System ready. Your location: {test_location.city}[/green]")
         except Exception as e:
-            console.print(f"[yellow]⚠️ Location service limited: {str(e)}[/yellow]")
+            console.print(f"[yellow]Location service limited: {str(e)}[/yellow]")
         
         while True:
             self.show_main_menu()
@@ -296,7 +291,7 @@ class UrbanTrafficSystem:
                     interval = int(console.input("Update interval (minutes, default 10): ") or "10")
                     self.run_continuous_monitoring(destination, interval)
                 except ValueError:
-                    console.print("[red]❌ Please enter a valid number[/red]")
+                    console.print("[red]Please enter a valid number[/red]")
             
             elif choice == '3':
                 self.compare_multiple_destinations()
@@ -305,33 +300,33 @@ class UrbanTrafficSystem:
                 self.show_current_location_info()
             
             elif choice == '5':
-                console.print("\n[green]👋 Thank you for using Urban Traffic System![/green]")
+                console.print("\n[green]Thank you for using Urban Traffic System![/green]")
                 break
             
             else:
-                console.print("[red]❌ Invalid choice. Please select 1-5.[/red]")
+                console.print("[red]Invalid choice. Please select 1-5.[/red]")
             
             console.input("\nPress Enter to continue...")
     
     def compare_multiple_destinations(self):
         """Compare traffic to multiple destinations from current location."""
-        console.print("\n[bold cyan]📊 COMPARE MULTIPLE DESTINATIONS[/bold cyan]")
+        console.print("\n[bold cyan]COMPARE MULTIPLE DESTINATIONS[/bold cyan]")
         console.print("[yellow]Enter destinations separated by commas[/yellow]")
         
         destinations_input = console.input("\nDestinations: ").strip()
         destinations = [d.strip() for d in destinations_input.split(',') if d.strip()]
         
         if len(destinations) < 2:
-            console.print("[red]❌ Please enter at least 2 destinations[/red]")
+            console.print("[red]Please enter at least 2 destinations[/red]")
             return
         
         # Detect current location
         current_location = self.location_service.detect_current_location()
         if not current_location:
-            console.print("[red]❌ Could not detect current location[/red]")
+            console.print("[red]Could not detect current location[/red]")
             return
         
-        console.print(f"\n[green]📍 Starting from: {current_location.address}[/green]")
+        console.print(f"\n[green]Starting from: {current_location.address}[/green]")
         
         results = []
         with Progress() as progress:
@@ -374,20 +369,20 @@ class UrbanTrafficSystem:
                     result['destination'][:30] + ("..." if len(result['destination']) > 30 else ""),
                     f"{result['time']:.1f} min",
                     f"{result['delay']:.1f} min",
-                    f"{result['traffic'].get_emoji()} {result['traffic'].name.title()}"
+                    f"{result['traffic'].name.title()}"
                 )
             
             console.print(table)
             
             # Show fastest option
             fastest = results[0]
-            console.print(f"\n[bold green]🚀 Fastest Option: {fastest['destination']}[/bold green]")
+            console.print(f"\n[bold green]Fastest Option: {fastest['destination']}[/bold green]")
             console.print(f"   Travel Time: {fastest['time']:.1f} minutes")
-            console.print(f"   Traffic: {fastest['traffic'].get_emoji()} {fastest['traffic'].name.title()}")
+            console.print(f"   Traffic: {fastest['traffic'].name.title()}")
     
     def show_current_location_info(self):
         """Show detailed information about current location."""
-        console.print("\n[bold cyan]📍 CURRENT LOCATION INFORMATION[/bold cyan]")
+        console.print("\n[bold cyan]CURRENT LOCATION INFORMATION[/bold cyan]")
         
         location = self.location_service.detect_current_location()
         
@@ -405,7 +400,7 @@ class UrbanTrafficSystem:
             )
             console.print(info_panel)
         else:
-            console.print("[red]❌ Could not determine current location[/red]")
+            console.print("[red]Could not determine current location[/red]")
 
 
 def main():
@@ -414,10 +409,10 @@ def main():
         app = UrbanTrafficSystem()
         app.run()
     except KeyboardInterrupt:
-        console.print("\n[yellow]🛑 Application interrupted by user[/yellow]")
+        console.print("\n[yellow]Application interrupted by user[/yellow]")
     except Exception as e:
         logger.error(f"Application error: {e}")
-        console.print(f"[red]❌ Fatal error: {str(e)}[/red]")
+        console.print(f"[red]Fatal error: {str(e)}[/red]")
 
 
 if __name__ == "__main__":
