@@ -8,6 +8,7 @@ import ViolationDetection from './components/ViolationDetection';
 import NotificationsView from './components/NotificationsView';
 
 import SmartParking from './components/SmartParking';
+import TrafficMonitoring from './components/TrafficMonitoring';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -45,8 +46,10 @@ function App() {
 
         {activeTab === 'Notifications' && <NotificationsView />}
 
+        {activeTab === 'Traffic Monitoring' && <TrafficMonitoring />}
+
         {/* Placeholders for other tabs */}
-        {(activeTab === 'Traffic Monitoring' || activeTab === 'Emergency Response') && (
+        {activeTab === 'Emergency Response' && (
           <div className="placeholder-section">
             <h2>{activeTab}</h2>
             <p>Module under development.</p>
