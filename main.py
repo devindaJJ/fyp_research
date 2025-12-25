@@ -1,137 +1,191 @@
+import argparse
 import cv2
-from ultralytics import YOLO
-from deep_sort_realtime.deepsort_tracker import DeepSort
+from typing import Optional
 
-# -----------------------------------
-# CONFIGURATION
-# -----------------------------------
-VIDEO_PATH = "videos/speeding2.mp4"   # change video name here
-DISTANCE_BETWEEN_LINES = 20           # meters (adjust per camera)
-SPEED_LIMIT = 60                      # km/h
+from src.core.config import config
+from src.speed.detector import VehicleSpeedDetector
+from src.anpr.detector import NumberPlateDetector
 
-LINE_A = 400                          # first virtual line (pixels)
-LINE_B = 1800                          # second virtual line (pixels)
 
-VEHICLE_CLASSES = ["car", "motorcycle", "bus", "truck"]
+class TrafficApp:
+    """
+    Class-based orchestrator for speed detection, ANPR, or both.
+    Keeps main.py small, clear, and extensible.
+    """
 
-# -----------------------------------
-# LOAD MODELS
-# -----------------------------------
-model = YOLO("yolov8n.pt")
-tracker = DeepSort(max_age=30, n_init=3)
+    def __init__(
+        self,
+        mode: str,
+        video_path: Optional[str] = None,
+        image_path: Optional[str] = None,
+        anpr_model: Optional[str] = None,
+    ):
+        self.mode = mode
+        self.video_path = video_path
+        self.image_path = image_path
+        self.anpr_model = anpr_model
 
-# Store timestamps for each vehicle
-vehicle_data = {}  # {track_id: {'t1': None, 't2': None, 'speed_done': False}}
+        self.speed_detector: Optional[VehicleSpeedDetector] = None
+        self.anpr_detector: Optional[NumberPlateDetector] = None
 
-# -----------------------------------
-# LOAD VIDEO
-# -----------------------------------
-cap = cv2.VideoCapture(VIDEO_PATH)
+    @staticmethod
+    def parse_args():
+        parser = argparse.ArgumentParser(description="Urban Traffic System Runner")
+        parser.add_argument("--mode", choices=["speed", "anpr", "both"], default="speed",
+                            help="Which pipeline to run")
+        parser.add_argument("--video", type=str, default=None, help="Path to video file")
+        parser.add_argument("--image", type=str, default=None, help="Path to image (ANPR only)")
+        parser.add_argument("--anpr-model", type=str, default=None, help="Path to ANPR YOLO model")
+        return parser.parse_args()
 
-# Resize window so FULL video is visible
-cv2.namedWindow("Vehicle Speed Detection", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("Vehicle Speed Detection", 1280, 720)
+    def create_anpr_detector(self) -> NumberPlateDetector:
+        model_path = (
+            self.anpr_model
+            or (getattr(config, "anpr").model_path if hasattr(config, "anpr") else None)
+            or "models/number_plate_yolo.pt"
+        )
+        languages = (getattr(config, "anpr").languages if hasattr(config, "anpr") else ["en"])
+        conf = (getattr(config, "anpr").confidence_threshold if hasattr(config, "anpr") else 0.25)
+        img_size = (getattr(config, "anpr").image_size if hasattr(config, "anpr") else 640)
+        return NumberPlateDetector(model_path=model_path, languages=languages,
+                                   confidence_threshold=conf, image_size=img_size)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    def run(self):
+        if self.mode == "speed":
+            self.run_speed()
+        elif self.mode == "anpr":
+            self.run_anpr()
+        else:
+            self.run_both()
 
-    # -----------------------------------
-    # YOLO DETECTION
-    # -----------------------------------
-    results = model(frame, verbose=False)
+    def run_speed(self):
+        """Run speed detection using the detector’s own loop."""
+        self.speed_detector = VehicleSpeedDetector(video_path=self.video_path)
+        self.speed_detector.run()
 
-    detections = []
-    for r in results:
-        for box in r.boxes:
-            cls_id = int(box.cls[0])
-            cls_name = model.names[cls_id]
+    def run_anpr(self):
+        """Run ANPR on either an image or a video."""
+        self.anpr_detector = self.create_anpr_detector()
 
-            if cls_name in VEHICLE_CLASSES:
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                conf = float(box.conf[0])
-                detections.append([[x1, y1, x2, y2], conf])
+        # Image mode
+        if self.image_path:
+            img = cv2.imread(self.image_path)
+            if img is None:
+                print(f"Error: could not load image: {self.image_path}")
+                return
+            plates = self.anpr_detector.detect_and_read(img, draw_results=True)
+            if isinstance(plates, tuple):
+                plates_data, annotated = plates
+            else:
+                plates_data, annotated = plates, img
+            print(f"Detected {len(plates_data)} plate(s)")
+            for p in plates_data:
+                print(f"- {p['text']} (valid={p['valid']}) bbox={p['bbox']}")
+            cv2.imshow("ANPR", annotated)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            return
 
-    # -----------------------------------
-    # DEEPSORT TRACKING
-    # -----------------------------------
-    tracks = tracker.update_tracks(detections, frame=frame)
-    active_ids = []
+        # Video mode
+        path = self.video_path or config.video.path
+        cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            print(f"Error: could not open video: {path}")
+            return
 
-    for track in tracks:
-        if not track.is_confirmed():
-            continue
+        window_name = "ANPR"
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(window_name, 1280, 720)
 
-        track_id = track.track_id
-        active_ids.append(track_id)
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-        x1, y1, x2, y2 = map(int, track.to_ltrb())
-        center_y = (y1 + y2) // 2
+                plates = self.anpr_detector.detect_and_read(frame, draw_results=True)
+                if isinstance(plates, tuple):
+                    _, annotated = plates
+                else:
+                    annotated = frame
 
-        # Initialize vehicle
-        if track_id not in vehicle_data:
-            vehicle_data[track_id] = {"t1": None, "t2": None, "speed_done": False}
+                cv2.imshow(window_name, annotated)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
 
-        # Line A crossing
-        if vehicle_data[track_id]["t1"] is None and center_y > LINE_A:
-            vehicle_data[track_id]["t1"] = cv2.getTickCount() / cv2.getTickFrequency()
+    def draw_anpr_overlays_on_frame(self, frame):
+        """Run ANPR on a frame and draw overlays onto the same frame."""
+        if self.anpr_detector is None:
+            self.anpr_detector = self.create_anpr_detector()
 
-        # Line B crossing
-        elif vehicle_data[track_id]["t2"] is None and center_y > LINE_B:
-            vehicle_data[track_id]["t2"] = cv2.getTickCount() / cv2.getTickFrequency()
+        plates_data = self.anpr_detector.detect_and_read(frame, draw_results=False)
+        for p in plates_data:
+            (x1, y1, x2, y2) = p["bbox"]
+            color = (0, 255, 0) if p["text"] else (0, 0, 255)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            if p["text"]:
+                cv2.putText(frame, p["text"], (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+        return frame
 
-        # Speed calculation (once)
-        if (
-            vehicle_data[track_id]["t1"]
-            and vehicle_data[track_id]["t2"]
-            and not vehicle_data[track_id]["speed_done"]
-        ):
-            t1 = vehicle_data[track_id]["t1"]
-            t2 = vehicle_data[track_id]["t2"]
+    def run_both(self):
+        """Run speed detection and ANPR in a single loop with a single window."""
+        # Instantiate speed detector but release its internal capture; we’ll reuse one shared cap.
+        self.speed_detector = VehicleSpeedDetector(video_path=self.video_path)
+        if self.speed_detector.cap and self.speed_detector.cap.isOpened():
+            self.speed_detector.cap.release()
 
-            speed_mps = DISTANCE_BETWEEN_LINES / (t2 - t1)
-            speed_kmh = speed_mps * 3.6
+        # ANPR detector
+        self.anpr_detector = self.create_anpr_detector()
 
-            vehicle_data[track_id]["speed"] = speed_kmh
-            vehicle_data[track_id]["speed_done"] = True
+        # Shared capture
+        path = self.video_path or config.video.path
+        cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            print(f"Error: could not open video: {path}")
+            return
 
-        # -----------------------------------
-        # DRAW BOX & LABEL
-        # -----------------------------------
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(frame, f"ID {track_id}", (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        window_name = self.speed_detector.window_name
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(window_name, config.display.window_width, config.display.window_height)
 
-        if "speed" in vehicle_data[track_id]:
-            speed = vehicle_data[track_id]["speed"]
-            cv2.putText(frame, f"{int(speed)} km/h", (x1, y2 + 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-            if speed > SPEED_LIMIT:
-                cv2.putText(frame, "SPEEDING!", (x1, y1 - 35),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                # Speed per-frame
+                detections = self.speed_detector.detect_vehicles(frame)
+                tracks = self.speed_detector.tracker.update_tracks(detections, frame=frame)
+                active_ids = self.speed_detector.process_tracks(tracks, frame)
+                self.speed_detector.draw_virtual_lines(frame)
+                self.speed_detector.clean_old_tracks(active_ids)
 
-    # -----------------------------------
-    # DRAW VIRTUAL LINES
-    # -----------------------------------
-    cv2.line(frame, (0, LINE_A), (frame.shape[1], LINE_A), (255, 0, 0), 2)
-    cv2.line(frame, (0, LINE_B), (frame.shape[1], LINE_B), (0, 0, 255), 2)
+                # ANPR overlays on same frame
+                frame = self.draw_anpr_overlays_on_frame(frame)
 
-    # -----------------------------------
-    # CLEAN OLD TRACKS
-    # -----------------------------------
-    for vid in list(vehicle_data.keys()):
-        if vid not in active_ids:
-            del vehicle_data[vid]
+                cv2.imshow(window_name, frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
 
-    # -----------------------------------
-    # SHOW OUTPUT
-    # -----------------------------------
-    cv2.imshow("Vehicle Speed Detection", frame)
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+def main():
+    args = TrafficApp.parse_args()
+    app = TrafficApp(
+        mode=args.mode,
+        video_path=args.video,
+        image_path=args.image,
+        anpr_model=args.anpr_model,
+    )
+    app.run()
 
-cap.release()
-cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
