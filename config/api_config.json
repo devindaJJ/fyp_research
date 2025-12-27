@@ -1,0 +1,28 @@
+{
+  "google_maps": {
+    "max_requests_per_minute": 50,
+    "max_alternatives": 3,
+    "default_traffic_model": "best_guess",
+    "retry_attempts": 3,
+    "timeout_seconds": 30
+  },
+  
+  "geolocation": {
+    "services": ["ipinfo", "ip_api", "geolocation_db"],
+    "cache_duration_minutes": 60,
+    "accuracy_threshold": 0.8
+  },
+  
+  "caching": {
+    "route_cache_minutes": 5,
+    "location_cache_minutes": 60,
+    "max_cache_size": 1000
+  },
+  
+  "sri_lanka_bounds": {
+    "min_latitude": 5.5,
+    "max_latitude": 10.0,
+    "min_longitude": 79.5,
+    "max_longitude": 82.0
+  }
+}
