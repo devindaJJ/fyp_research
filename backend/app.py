@@ -1,14 +1,27 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from google_sheets import GoogleSheetsHandler
+from traffic_routes import traffic_bp
 import json
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app)  
 
-# Initialize Google Sheets handler
-sheets_handler = GoogleSheetsHandler()
+# Register blueprints
+app.register_blueprint(traffic_bp)
+
+sheets_handler = None
+
+def get_sheets_handler():
+    global sheets_handler
+    if sheets_handler is None:
+        try:
+            sheets_handler = GoogleSheetsHandler()
+        except Exception as e:
+            print(f"Warning: Google Sheets initialization failed: {e}")
+            return None
+    return sheets_handler
 
 @app.route('/')
 def home():
@@ -18,7 +31,13 @@ def home():
 @app.route('/api/parking-data', methods=['GET'])
 def get_parking_data():
     try:
-        data = sheets_handler.get_parking_data()
+        handler = get_sheets_handler()
+        if handler is None:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets handler not available. Check credentials."
+            }), 503
+        data = handler.get_parking_data()
         return jsonify({
             "success": True,
             "data": data,
@@ -34,9 +53,15 @@ def get_parking_data():
 @app.route('/api/violations', methods=['GET'])
 def get_violations():
     try:
+        handler = get_sheets_handler()
+        if handler is None:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets handler not available. Check credentials."
+            }), 503
         # Get last 24 hours violations
         time_threshold = datetime.now() - timedelta(hours=24)
-        violations = sheets_handler.get_violations_since(time_threshold)
+        violations = handler.get_violations_since(time_threshold)
         
         return jsonify({
             "success": True,
@@ -53,7 +78,13 @@ def get_violations():
 @app.route('/api/statistics', methods=['GET'])
 def get_statistics():
     try:
-        stats = sheets_handler.get_system_statistics()
+        handler = get_sheets_handler()
+        if handler is None:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets handler not available. Check credentials."
+            }), 503
+        stats = handler.get_system_statistics()
         return jsonify({
             "success": True,
             "statistics": stats
@@ -68,7 +99,13 @@ def get_statistics():
 @app.route('/api/device-health', methods=['GET'])
 def get_device_health():
     try:
-        health_data = sheets_handler.get_device_health()
+        handler = get_sheets_handler()
+        if handler is None:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets handler not available. Check credentials."
+            }), 503
+        health_data = handler.get_device_health()
         return jsonify({
             "success": True,
             "devices": health_data
@@ -80,4 +117,4 @@ def get_device_health():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8000)

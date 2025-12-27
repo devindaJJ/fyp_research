@@ -4,6 +4,7 @@ import Dashboard from './Dashboard';
 import ViolationAlerts from './violationAlerts';
 import SystemHealth from './SystemHealth';
 import ParkingMap from './Dashboard';
+import TrafficAnalyzer from './TrafficAnalyzer';
 import './App.css';
 
 const API_BASE = 'http://localhost:5000/api';
@@ -61,6 +62,12 @@ function App() {
             📊 Dashboard
           </button>
           <button 
+            className={activeTab === 'traffic' ? 'active' : ''}
+            onClick={() => setActiveTab('traffic')}
+          >
+            🚗 Traffic Analyzer
+          </button>
+          <button 
             className={activeTab === 'violations' ? 'active' : ''}
             onClick={() => setActiveTab('violations')}
           >
@@ -88,6 +95,9 @@ function App() {
             statistics={statistics}
             violations={violations}
           />
+        )}
+        {activeTab === 'traffic' && (
+          <TrafficAnalyzer />
         )}
         {activeTab === 'violations' && (
           <ViolationAlerts violations={violations} />
