@@ -1,8 +1,12 @@
 """
 Configuration constants for the Vehicle Speed Detection System.
 """
+import os
 from dataclasses import dataclass
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass
@@ -36,7 +40,7 @@ class ANPRConfig:
     """ANPR (Number Plate Recognition) configuration."""
     model_path: str = "models/number_plate_yolo.pt"
     languages: List[str] = None
-    confidence_threshold: float = 0.25
+    confidence_threshold: float = 0.15  # Lowered from 0.25 for better detection
     image_size: int = 640
     
     def __post_init__(self):
@@ -57,6 +61,15 @@ class DisplayConfig:
     window_name: str = "Vehicle Speed Detection"
     window_width: int = 1280
     window_height: int = 720
+    
+@dataclass
+class GoogleMapsConfig:
+    """Google Maps API configuration."""
+    api_key: str = os.getenv("GOOGLE_MAPS_API_KEY")
+    road_location: str = "Galle Road, Colombo, Sri Lanka"  # Location of your video
+    use_google_maps: bool = True  
+    check_special_zones: bool = True  # Check for schools, hospitals
+    cache_enabled: bool = True  # Cache API results to save calls
 
 
 @dataclass
@@ -68,6 +81,7 @@ class AppConfig:
     anpr: ANPRConfig = None
     tracker: TrackerConfig = None
     display: DisplayConfig = None
+    google_maps: GoogleMapsConfig = None  
     
     def __post_init__(self):
         if self.video is None:
@@ -82,6 +96,8 @@ class AppConfig:
             self.tracker = TrackerConfig()
         if self.display is None:
             self.display = DisplayConfig()
+        if self.google_maps is None:  # ADD THIS
+            self.google_maps = GoogleMapsConfig()
 
 
 # Default configuration instance

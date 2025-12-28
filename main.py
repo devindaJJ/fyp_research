@@ -5,6 +5,9 @@ from typing import Optional
 from src.core.config import config
 from src.speed.detector import VehicleSpeedDetector
 from src.anpr.detector import NumberPlateDetector
+from src.utils.integration import VehicleDataIntegrator
+from src.utils.exporter import ResultExporter
+from src.utils.google_maps_integration import GoogleMapsRoadContext
 
 
 class TrafficApp:
@@ -24,9 +27,13 @@ class TrafficApp:
         self.video_path = video_path
         self.image_path = image_path
         self.anpr_model = anpr_model
+        self.google_maps_context = None
+        self.dynamic_speed_limit = None
 
         self.speed_detector: Optional[VehicleSpeedDetector] = None
         self.anpr_detector: Optional[NumberPlateDetector] = None
+        self.integrator: Optional[VehicleDataIntegrator] = None
+        self.exporter: ResultExporter = ResultExporter()
 
     @staticmethod
     def parse_args():
@@ -130,6 +137,47 @@ class TrafficApp:
                 cv2.putText(frame, p["text"], (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
         return frame
+    
+    def draw_integrated_results(self, frame):
+        """Draw integrated vehicle tracking and plate information on frame."""
+        if self.integrator is None:
+            return
+        
+        all_vehicles = self.integrator.get_all_vehicles()
+        
+        for track_id, vehicle_data in all_vehicles.items():
+            bbox = vehicle_data['bbox']
+            if bbox is None:
+                continue
+            
+            x1, y1, x2, y2 = bbox
+            speed = vehicle_data['speed']
+            plate = vehicle_data['plate']
+            violation = vehicle_data['violation']
+            
+            # Draw bounding box (green for normal, red for violation)
+            color = (0, 0, 255) if violation else (0, 255, 0)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            
+            # Draw track ID
+            cv2.putText(frame, f"ID {track_id}", (x1, y1 - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            
+            # Draw speed
+            if speed is not None:
+                speed_text = f"{int(speed)} km/h"
+                cv2.putText(frame, speed_text, (x1, y2 + 25),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                
+                if violation:
+                    cv2.putText(frame, "SPEEDING!", (x1, y1 - 35),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            
+            # Draw plate number
+            if plate:
+                plate_color = (0, 255, 255)  # Yellow for plate
+                cv2.putText(frame, plate, (x1, y2 + 50),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, plate_color, 2)
 
     def run_both(self):
         """Run speed detection and ANPR in a single loop with a single window."""
@@ -140,6 +188,25 @@ class TrafficApp:
 
         # ANPR detector
         self.anpr_detector = self.create_anpr_detector()
+        
+         # Google Maps integration - FETCH SPEED LIMIT
+        if config.google_maps.use_google_maps and config.google_maps.api_key:
+            try:
+                self.google_maps_context = GoogleMapsRoadContext(config.google_maps.api_key)
+                road_context = self.google_maps_context.get_complete_road_context(
+                    config.google_maps.road_location
+                )
+                
+                if road_context and 'final_speed_limit' in road_context:
+                    self.dynamic_speed_limit = road_context['final_speed_limit']
+                    # Override the speed detector's speed limit
+                    self.speed_detector.speed_limit = self.dynamic_speed_limit
+                    print(f"\n✓ Using Google Maps speed limit: {self.dynamic_speed_limit} KPH")
+                
+            except Exception as e:
+                print(f"Could not initialize Google Maps: {e}")
+                print("Using default speed limit from config")
+        
 
         # Shared capture
         path = self.video_path or config.video.path
@@ -151,12 +218,21 @@ class TrafficApp:
         window_name = self.speed_detector.window_name
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_name, config.display.window_width, config.display.window_height)
+        
+        # Integration module
+        speed_limit = self.speed_detector.speed_limit
+        self.integrator = VehicleDataIntegrator(speed_limit=speed_limit)
+        
+        frame_count = 0
+        print_interval = 30  # Print summary every 30 frames
 
         try:
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
+                
+                frame_count += 1
 
                 # Speed per-frame
                 detections = self.speed_detector.detect_vehicles(frame)
@@ -164,14 +240,64 @@ class TrafficApp:
                 active_ids = self.speed_detector.process_tracks(tracks, frame)
                 self.speed_detector.draw_virtual_lines(frame)
                 self.speed_detector.clean_old_tracks(active_ids)
-
-                # ANPR overlays on same frame
-                frame = self.draw_anpr_overlays_on_frame(frame)
+                
+                # Get current tracking data
+                current_tracks = self.speed_detector.get_current_tracks()
+                
+                # Update integrator with tracking data
+                for track_id, track_data in current_tracks.items():
+                    self.integrator.update_vehicle_tracking(
+                        track_id=track_id,
+                        bbox=track_data['bbox'],
+                        speed=track_data['speed']
+                    )
+                
+                # ANPR detection
+                plates_data = self.anpr_detector.detect_and_read(frame, draw_results=False)
+                
+                # Debug: Print plate detections
+                if plates_data and frame_count % print_interval == 0:
+                    print(f"[DEBUG] Frame {frame_count}: Detected {len(plates_data)} plate(s)")
+                    for p in plates_data:
+                        print(f"  Plate bbox: {p['bbox']}, text: {p['text']}, valid: {p['valid']}")
+                
+                # Link plates to vehicles
+                self.integrator.link_plates_to_vehicles(plates_data)
+                
+                # Clean up old vehicles
+                self.integrator.clean_old_vehicles(active_ids)
+                
+                # Draw integrated results on frame (instead of separate overlays)
+                self.draw_integrated_results(frame)
+                
+                # Print summary periodically
+                if frame_count % print_interval == 0:
+                    self.integrator.print_all_vehicles()
 
                 cv2.imshow(window_name, frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
         finally:
+            # Print final summary
+            print("\n" + "="*80)
+            print("FINAL SUMMARY")
+            print("="*80)
+            all_vehicles = self.integrator.get_all_vehicles()
+            self.integrator.print_all_vehicles()
+            
+            # Export results
+            if all_vehicles:
+                csv_path = self.exporter.export_to_csv(all_vehicles)
+                json_path = self.exporter.export_to_json(all_vehicles)
+                violations_path = self.exporter.export_violations_only(all_vehicles)
+                
+                print(f"\nResults exported to:")
+                print(f"  - CSV: {csv_path}")
+                print(f"  - JSON: {json_path}")
+                print(f"  - Violations: {violations_path}")
+                
+                self.exporter.print_summary_report(all_vehicles)
+            
             cap.release()
             cv2.destroyAllWindows()
 

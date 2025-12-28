@@ -35,7 +35,8 @@ class VehicleSpeedDetector:
         self.tracker = DeepSort(max_age=config.tracker.max_age, n_init=config.tracker.n_init)
         
         # Vehicle tracking data
-        self.vehicle_data = {}  # {track_id: {'t1': None, 't2': None, 'speed_done': False}}
+        self.vehicle_data = {}  # {track_id: {'t1': None, 't2': None, 'speed_done': False, 'bbox': None}}
+        self.current_tracks = {}  # {track_id: {'bbox': (x1,y1,x2,y2), 'speed': float or None}}
         
         # Video capture
         self.cap = cv2.VideoCapture(self.video_path)
@@ -122,7 +123,10 @@ class VehicleSpeedDetector:
             
             # Initialize vehicle
             if track_id not in self.vehicle_data:
-                self.vehicle_data[track_id] = {"t1": None, "t2": None, "speed_done": False}
+                self.vehicle_data[track_id] = {"t1": None, "t2": None, "speed_done": False, "bbox": None}
+            
+            # Update bounding box
+            self.vehicle_data[track_id]["bbox"] = (x1, y1, x2, y2)
             
             # Line A crossing
             if self.vehicle_data[track_id]["t1"] is None and center_y > self.line_a:
@@ -134,6 +138,12 @@ class VehicleSpeedDetector:
             
             # Speed calculation
             self.calculate_speed(track_id)
+            
+            # Update current tracks for external access
+            self.current_tracks[track_id] = {
+                'bbox': (x1, y1, x2, y2),
+                'speed': self.vehicle_data[track_id].get('speed')
+            }
             
             # Draw tracking information
             self.draw_track(frame, track_id, x1, y1, x2, y2)
@@ -182,6 +192,10 @@ class VehicleSpeedDetector:
         for vid in list(self.vehicle_data.keys()):
             if vid not in active_ids:
                 del self.vehicle_data[vid]
+        
+        for vid in list(self.current_tracks.keys()):
+            if vid not in active_ids:
+                del self.current_tracks[vid]
     
     def run(self):
         """
@@ -209,3 +223,26 @@ class VehicleSpeedDetector:
         # Cleanup
         self.cap.release()
         cv2.destroyAllWindows()
+    
+    def get_current_tracks(self):
+        """
+        Get current tracking data for all active vehicles.
+        
+        Returns:
+            Dictionary of {track_id: {'bbox': (x1,y1,x2,y2), 'speed': float or None}}
+        """
+        return self.current_tracks.copy()
+    
+    def get_vehicle_speed(self, track_id):
+        """
+        Get the speed of a specific vehicle.
+        
+        Args:
+            track_id: ID of the tracked vehicle
+            
+        Returns:
+            Speed in km/h or None if not yet calculated
+        """
+        if track_id in self.vehicle_data:
+            return self.vehicle_data[track_id].get('speed')
+        return None
