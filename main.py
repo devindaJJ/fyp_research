@@ -1,5 +1,6 @@
 import argparse
 import cv2
+from pathlib import Path
 from typing import Optional, List, Dict
 
 from src.core.config import config
@@ -25,9 +26,13 @@ class TrafficApp:
         anpr_model: Optional[str] = None,
     ):
         self.mode = mode
-        self.video_path = video_path
-        self.image_path = image_path
-        self.anpr_model = anpr_model
+        self.project_root = Path(__file__).parent
+        
+        # Convert relative paths to absolute
+        self.video_path = self._resolve_path(video_path) if video_path else None
+        self.image_path = self._resolve_path(image_path) if image_path else None
+        self.anpr_model = self._resolve_path(anpr_model) if anpr_model else None
+        
         self.google_maps_context = None
         self.dynamic_speed_limit = None
 
@@ -35,6 +40,14 @@ class TrafficApp:
         self.anpr_detector: Optional[NumberPlateDetector] = None
         self.integrator: Optional[VehicleDataIntegrator] = None
         self.exporter: ResultExporter = ResultExporter()
+
+    def _resolve_path(self, path: str) -> str:
+        """Convert relative paths to absolute paths based on project root."""
+        path_obj = Path(path)
+        if path_obj.is_absolute():
+            return str(path_obj)
+        else:
+            return str(self.project_root / path)
 
     @staticmethod
     def parse_args():
@@ -47,11 +60,19 @@ class TrafficApp:
         return parser.parse_args()
 
     def create_anpr_detector(self) -> NumberPlateDetector:
+        # Use absolute path relative to main.py location
+        project_root = Path(__file__).parent
+        
+        # Get model path and ensure it's absolute
         model_path = (
             self.anpr_model
             or (getattr(config, "anpr").model_path if hasattr(config, "anpr") else None)
-            or "models/number_plate_yolo.pt"
+            or str(project_root / "models" / "number_plate_yolo.pt")
         )
+        
+        # Resolve to absolute path if relative
+        model_path = self._resolve_path(model_path)
+        
         languages = (getattr(config, "anpr").languages if hasattr(config, "anpr") else ["en"])
         conf = (getattr(config, "anpr").confidence_threshold if hasattr(config, "anpr") else 0.25)
         img_size = (getattr(config, "anpr").image_size if hasattr(config, "anpr") else 640)
@@ -95,7 +116,7 @@ class TrafficApp:
             return
 
         # Video mode
-        path = self.video_path or config.video.path
+        path = self.video_path or self._resolve_path(config.video.path)
         cap = cv2.VideoCapture(path)
         if not cap.isOpened():
             print(f"Error: could not open video: {path}")
@@ -253,7 +274,7 @@ class TrafficApp:
         speed_limit = self.speed_detector.speed_limit
         self.integrator = VehicleDataIntegrator(speed_limit=speed_limit)
 
-        path = self.video_path or config.video.path
+        path = self.video_path or self._resolve_path(config.video.path)
         cap = cv2.VideoCapture(path)
         if not cap.isOpened():
             print(f"Error: could not open video: {path}")

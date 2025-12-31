@@ -10,7 +10,7 @@ class VehicleSpeedDetector:
     """
     
     def __init__(self, video_path=None, distance_between_lines=None, speed_limit=None, 
-                 line_a=None, line_b=None, model_path=None):
+                 line_a=None, line_b=None, model_path=None, headless=False):
         """
         Initialize the vehicle speed detector.
         
@@ -21,6 +21,7 @@ class VehicleSpeedDetector:
             line_a: Y-coordinate of the first virtual line (pixels)
             line_b: Y-coordinate of the second virtual line (pixels)
             model_path: Path to the YOLO model
+            headless: If True, don't create display windows (for API use)
         """
         # Configuration with defaults from config file
         self.video_path = video_path or config.video.path
@@ -29,6 +30,7 @@ class VehicleSpeedDetector:
         self.line_a = line_a or config.speed_detection.line_a
         self.line_b = line_b or config.speed_detection.line_b
         self.vehicle_classes = config.model.vehicle_classes
+        self.headless = headless
         
         # Load models
         self.model = YOLO(model_path or config.model.path)
@@ -38,13 +40,17 @@ class VehicleSpeedDetector:
         self.vehicle_data = {}  # {track_id: {'t1': None, 't2': None, 'speed_done': False, 'bbox': None}}
         self.current_tracks = {}  # {track_id: {'bbox': (x1,y1,x2,y2), 'speed': float or None}}
         
-        # Video capture
-        self.cap = cv2.VideoCapture(self.video_path)
+        # Video capture (only if path provided and not headless)
+        if self.video_path and not headless:
+            self.cap = cv2.VideoCapture(self.video_path)
+        else:
+            self.cap = None
         
-        # Window setup
+        # Window setup (skip in headless mode)
         self.window_name = config.display.window_name
-        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(self.window_name, config.display.window_width, config.display.window_height)
+        if not headless:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, config.display.window_width, config.display.window_height)
     
     def detect_vehicles(self, frame):
         """

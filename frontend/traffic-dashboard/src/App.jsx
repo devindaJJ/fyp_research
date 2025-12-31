@@ -6,7 +6,6 @@ import Analytics from './components/Analytics';
 import SplashScreen from './components/SplashScreen';
 import ViolationDetection from './components/ViolationDetection';
 import NotificationsView from './components/NotificationsView';
-
 import SmartParking from './components/SmartParking';
 import TrafficMonitoring from './components/TrafficMonitoring';
 

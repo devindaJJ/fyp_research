@@ -14,11 +14,11 @@ class SafetyEventDetector:
     
     def __init__(self):
         """Initialize safety detector."""
-        self.vehicle_history = {}  # Track previous states
-        self.alerts = []  # All detected alerts
-        self.collisions = []  # Serious incidents
-        self.near_misses = []  # Close calls
-        self.behavioral_alerts = []  # Aggressive driving
+        self.vehicle_history = {}  
+        self.alerts = []  
+        self.collisions = []  
+        self.near_misses = []  
+        self.behavioral_alerts = []  
     
     def update_vehicle_state(self, track_id: int, bbox: Tuple, speed: Optional[float]):
         """
@@ -168,12 +168,14 @@ class SafetyEventDetector:
         
         return None
     
-    def detect_collision(self, vehicle1: Dict, vehicle2: Dict) -> Optional[Dict]:
+    def detect_collision(self, track_id1: int, vehicle1: Dict, track_id2: int, vehicle2: Dict) -> Optional[Dict]:
         """
         Detect collision between two vehicles.
         
         Args:
+            track_id1: First vehicle track ID
             vehicle1: First vehicle data
+            track_id2: Second vehicle track ID
             vehicle2: Second vehicle data
             
         Returns:
@@ -191,7 +193,7 @@ class SafetyEventDetector:
         if overlap > 0.5:
             return {
                 'type': 'COLLISION',
-                'track_ids': [vehicle1['track_id'], vehicle2['track_id']],
+                'track_ids': [track_id1, track_id2],
                 'plates': [vehicle1.get('plate', 'N/A'), vehicle2.get('plate', 'N/A')],
                 'severity': 'CRITICAL',
                 'overlap': overlap,
@@ -201,13 +203,15 @@ class SafetyEventDetector:
         
         return None
     
-    def detect_near_miss(self, vehicle1: Dict, vehicle2: Dict,
+    def detect_near_miss(self, track_id1: int, vehicle1: Dict, track_id2: int, vehicle2: Dict,
                         min_distance: float = 100) -> Optional[Dict]:
         """
         Detect dangerous close proximity.
         
         Args:
+            track_id1: First vehicle track ID
             vehicle1: First vehicle data
+            track_id2: Second vehicle track ID
             vehicle2: Second vehicle data
             min_distance: Minimum safe distance in pixels
             
@@ -233,7 +237,7 @@ class SafetyEventDetector:
                 if relative_speed > 15:
                     return {
                         'type': 'NEAR_MISS',
-                        'track_ids': [vehicle1['track_id'], vehicle2['track_id']],
+                        'track_ids': [track_id1, track_id2],
                         'plates': [vehicle1.get('plate', 'N/A'), vehicle2.get('plate', 'N/A')],
                         'severity': 'HIGH',
                         'distance': distance,
@@ -349,13 +353,13 @@ class SafetyEventDetector:
                 track_id2, vehicle2 = vehicle_list[j]
                 
                 # Check for collision
-                collision = self.detect_collision(vehicle1, vehicle2)
+                collision = self.detect_collision(track_id1, vehicle1, track_id2, vehicle2)
                 if collision:
                     frame_alerts.append(collision)
                     self.collisions.append(collision)
                 
                 # Check for near-miss
-                near_miss = self.detect_near_miss(vehicle1, vehicle2)
+                near_miss = self.detect_near_miss(track_id1, vehicle1, track_id2, vehicle2)
                 if near_miss:
                     frame_alerts.append(near_miss)
                     self.near_misses.append(near_miss)
@@ -374,7 +378,7 @@ class SafetyEventDetector:
         """
         for alert in frame_alerts:
             icon = {
-                'COLLISION': '🚨',
+                'COLLISION': '🚨', # Add custom icons later
                 'NEAR_MISS': '⚠️',
                 'AGGRESSIVE_ACCELERATION': '⚡',
                 'HARD_BRAKING': '🛑',
@@ -410,7 +414,7 @@ class SafetyEventDetector:
         
         if near_misses > 0:
             print("\nHIGH-RISK NEAR-MISSES:")
-            for incident in self.near_misses[:5]:  # Show top 5
+            for incident in self.near_misses[:5]: 
                 plates = incident['plates']
                 print(f"  - {plates[0]} ↔ {plates[1]} (Distance: {incident['distance']:.0f}px)")
         

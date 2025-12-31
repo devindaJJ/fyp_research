@@ -1,9 +1,13 @@
+import os
 import gspread
+import pandas as pd
 import datetime
 import time
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class GoogleSheetsHandler:
     def __init__(self):
@@ -18,13 +22,13 @@ class GoogleSheetsHandler:
         
         # Download service account JSON from Google Cloud Console
         creds = Credentials.from_service_account_file(
-            'credentials.json', scopes=scope
+            os.getenv("SERVICE_ACCOUNT_CREDS"), scopes=scope
         )
         
         self.client = gspread.authorize(creds)
         
         # Open your Google Sheet
-        self.sheet = self.client.open("Parking System Data").sheet1
+        self.sheet = self.client.open_by_key(os.getenv("SHEET_ID")).sheet1
     
     def get_parking_data(self):
         """Get all parking data from Google Sheets"""
