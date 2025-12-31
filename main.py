@@ -1,6 +1,6 @@
 import argparse
 import cv2
-from typing import Optional
+from typing import Optional, List, Dict
 
 from src.core.config import config
 from src.speed.detector import VehicleSpeedDetector
@@ -8,6 +8,7 @@ from src.anpr.detector import NumberPlateDetector
 from src.utils.integration import VehicleDataIntegrator
 from src.utils.exporter import ResultExporter
 from src.utils.google_maps_integration import GoogleMapsRoadContext
+from src.utils.safety_detector import SafetyEventDetector
 
 
 class TrafficApp:
@@ -173,25 +174,69 @@ class TrafficApp:
                     cv2.putText(frame, "SPEEDING!", (x1, y1 - 35),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             
-            # Draw plate number
             if plate:
-                plate_color = (0, 255, 255)  # Yellow for plate
+                plate_color = (0, 255, 255) 
                 cv2.putText(frame, plate, (x1, y2 + 50),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, plate_color, 2)
+    def draw_safety_alerts_on_frame(self, frame, alerts: List[Dict]):
+        """
+        Draw safety alerts on the video frame.
+        
+        Args:
+            frame: Video frame
+            alerts: List of safety alerts from current frame
+        """
+        for alert in alerts:
+            alert_type = alert['type']
+            
+            # Choose color and text based on severity
+            if alert_type == 'COLLISION':
+                color = (0, 0, 255)  # Red
+                text = "COLLISION!"
+                y_offset = 100
+            elif alert_type == 'NEAR_MISS':
+                color = (0, 165, 255)  # Orange
+                text = "NEAR-MISS!"
+                y_offset = 130
+            elif alert_type == 'AGGRESSIVE_ACCELERATION':
+                color = (0, 255, 255)  # Yellow
+                text = "AGGRESSIVE ACCEL"
+                y_offset = 160
+            elif alert_type == 'HARD_BRAKING':
+                color = (0, 255, 165)  # Lime
+                text = "HARD BRAKE"
+                y_offset = 190
+            elif alert_type == 'ERRATIC_MOVEMENT':
+                color = (0, 191, 255)  # Deep Sky Blue
+                text = "ERRATIC MOVEMENT"
+                y_offset = 220
+            else:
+                continue
+            
+            cv2.rectangle(frame, (10, y_offset - 25), (300, y_offset + 10), color, -1)
+            cv2.putText(
+                frame,
+                text,
+                (20, y_offset),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 255),
+                2
+            )
 
     def run_both(self):
-        """Run speed detection and ANPR in a single loop with a single window."""
-        # Instantiate speed detector but release its internal capture; we’ll reuse one shared cap.
+        """Run speed detection, ANPR, and safety detection with full integration."""
+    
         self.speed_detector = VehicleSpeedDetector(video_path=self.video_path)
         if self.speed_detector.cap and self.speed_detector.cap.isOpened():
             self.speed_detector.cap.release()
 
-        # ANPR detector
         self.anpr_detector = self.create_anpr_detector()
+        safety_detector = SafetyEventDetector()
         
-         # Google Maps integration - FETCH SPEED LIMIT
         if config.google_maps.use_google_maps and config.google_maps.api_key:
             try:
+                from src.utils.google_maps_integration import GoogleMapsRoadContext
                 self.google_maps_context = GoogleMapsRoadContext(config.google_maps.api_key)
                 road_context = self.google_maps_context.get_complete_road_context(
                     config.google_maps.road_location
@@ -199,16 +244,15 @@ class TrafficApp:
                 
                 if road_context and 'final_speed_limit' in road_context:
                     self.dynamic_speed_limit = road_context['final_speed_limit']
-                    # Override the speed detector's speed limit
                     self.speed_detector.speed_limit = self.dynamic_speed_limit
-                    print(f"\n✓ Using Google Maps speed limit: {self.dynamic_speed_limit} KPH")
+                    print(f"✓ Using Google Maps speed limit: {self.dynamic_speed_limit} KPH\n")
                 
             except Exception as e:
-                print(f"Could not initialize Google Maps: {e}")
-                print("Using default speed limit from config")
+                print(f"Google Maps integration skipped: {e}\n")
         
+        speed_limit = self.speed_detector.speed_limit
+        self.integrator = VehicleDataIntegrator(speed_limit=speed_limit)
 
-        # Shared capture
         path = self.video_path or config.video.path
         cap = cv2.VideoCapture(path)
         if not cap.isOpened():
@@ -219,12 +263,8 @@ class TrafficApp:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window_name, config.display.window_width, config.display.window_height)
         
-        # Integration module
-        speed_limit = self.speed_detector.speed_limit
-        self.integrator = VehicleDataIntegrator(speed_limit=speed_limit)
-        
         frame_count = 0
-        print_interval = 30  # Print summary every 30 frames
+        print_interval = 30  
 
         try:
             while True:
@@ -234,17 +274,13 @@ class TrafficApp:
                 
                 frame_count += 1
 
-                # Speed per-frame
                 detections = self.speed_detector.detect_vehicles(frame)
                 tracks = self.speed_detector.tracker.update_tracks(detections, frame=frame)
                 active_ids = self.speed_detector.process_tracks(tracks, frame)
                 self.speed_detector.draw_virtual_lines(frame)
                 self.speed_detector.clean_old_tracks(active_ids)
-                
-                # Get current tracking data
                 current_tracks = self.speed_detector.get_current_tracks()
                 
-                # Update integrator with tracking data
                 for track_id, track_data in current_tracks.items():
                     self.integrator.update_vehicle_tracking(
                         track_id=track_id,
@@ -252,40 +288,37 @@ class TrafficApp:
                         speed=track_data['speed']
                     )
                 
-                # ANPR detection
                 plates_data = self.anpr_detector.detect_and_read(frame, draw_results=False)
                 
-                # Debug: Print plate detections
-                if plates_data and frame_count % print_interval == 0:
-                    print(f"[DEBUG] Frame {frame_count}: Detected {len(plates_data)} plate(s)")
-                    for p in plates_data:
-                        print(f"  Plate bbox: {p['bbox']}, text: {p['text']}, valid: {p['valid']}")
-                
-                # Link plates to vehicles
                 self.integrator.link_plates_to_vehicles(plates_data)
-                
-                # Clean up old vehicles
                 self.integrator.clean_old_vehicles(active_ids)
                 
-                # Draw integrated results on frame (instead of separate overlays)
-                self.draw_integrated_results(frame)
+                all_vehicles = self.integrator.get_all_vehicles()
+                safety_alerts = safety_detector.process_frame(all_vehicles)
                 
-                # Print summary periodically
+                if safety_alerts:
+                    print(f"\n[Frame {frame_count}] SAFETY ALERTS DETECTED:")
+                    safety_detector.print_frame_alerts(safety_alerts)
+                
+                self.draw_integrated_results(frame)                
+                self.draw_safety_alerts_on_frame(frame, safety_alerts)
+                
                 if frame_count % print_interval == 0:
+                    print(f"\n--- Frame {frame_count} Summary ---")
                     self.integrator.print_all_vehicles()
 
                 cv2.imshow(window_name, frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
+                    break   
         finally:
-            # Print final summary
             print("\n" + "="*80)
-            print("FINAL SUMMARY")
+            print("FINAL ANALYSIS COMPLETE")
             print("="*80)
+            
             all_vehicles = self.integrator.get_all_vehicles()
             self.integrator.print_all_vehicles()
+            safety_detector.print_summary()
             
-            # Export results
             if all_vehicles:
                 csv_path = self.exporter.export_to_csv(all_vehicles)
                 json_path = self.exporter.export_to_json(all_vehicles)
@@ -310,7 +343,7 @@ def main():
         image_path=args.image,
         anpr_model=args.anpr_model,
     )
-    app.run()
+    app.run_both()
 
 
 if __name__ == "__main__":
