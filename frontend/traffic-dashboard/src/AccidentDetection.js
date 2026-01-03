@@ -134,16 +134,30 @@ function AccidentDetection() {
     return () => clearInterval(interval);
   }, []);
 
-  // Play alarm sound for High severity
+  // ================= UPDATED SOUND ALERTS =================
   useEffect(() => {
-    if (accidentAlert.detected && accidentAlert.severity === "High") {
-      const audio = new Audio(
-        "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"
-      );
-      audio.play();
+    if (!accidentAlert.detected) return;
+
+    let soundUrl = "";
+    switch(accidentAlert.severity){
+      case "High":
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"; // loud alarm
+        break;
+      case "Medium":
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"; // medium beep
+        break;
+      case "Low":
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"; // soft chime
+        break;
+      default:
+        return;
     }
+
+    const audio = new Audio(soundUrl);
+    audio.play();
   }, [accidentAlert]);
 
+  // ================= RENDER =================
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
 
