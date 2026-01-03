@@ -68,6 +68,11 @@ class Route:
             return (self.delay_minutes / self.normal_duration) * 100
         return 0.0
 
+    @property
+    def distance_km(self) -> float:
+        """Calculate distance in kilometers from meters."""
+        return round(self.distance_meters / 1000, 2)
+
 
 @dataclass
 class RouteAlternative(Route):
