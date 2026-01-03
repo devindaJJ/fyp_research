@@ -9,7 +9,6 @@ function AccidentDetection() {
   });
 
   const [accidentHistory, setAccidentHistory] = useState([]);
-
   const [emergencyResponse, setEmergencyResponse] = useState({
     notified: false,
     notifiedTime: "",
@@ -30,13 +29,13 @@ function AccidentDetection() {
   const circumference = 2 * Math.PI * radius;
 
   const severityColors = {
-    High: "#f44336",   // red
-    Medium: "#4caf50", // green
-    Low: "#ffeb3b"     // yellow
+    High: "#f44336",
+    Medium: "#4caf50",
+    Low: "#ffeb3b"
   };
 
   const severityToNumber = (severity) => {
-    switch(severity){
+    switch (severity) {
       case "Low": return 1;
       case "Medium": return 2;
       case "High": return 3;
@@ -54,7 +53,7 @@ function AccidentDetection() {
     : {};
 
   const getResponderColor = (status) => {
-    switch(status){
+    switch (status) {
       case "Available": return "green";
       case "Busy": return "orange";
       case "Offline": return "red";
@@ -75,7 +74,18 @@ function AccidentDetection() {
     monthlyData.medium > 10 ? "Average" :
     "Good";
 
-  // ================= SIMULATE REAL-TIME ACCIDENT =================
+  // =================== LOAD PERSISTENT STATE ===================
+  useEffect(() => {
+    const savedAlert = localStorage.getItem("accidentAlert");
+    const savedHistory = localStorage.getItem("accidentHistory");
+    const savedEmergency = localStorage.getItem("emergencyResponse");
+
+    if (savedAlert) setAccidentAlert(JSON.parse(savedAlert));
+    if (savedHistory) setAccidentHistory(JSON.parse(savedHistory));
+    if (savedEmergency) setEmergencyResponse(JSON.parse(savedEmergency));
+  }, []);
+
+  // =================== ACCIDENT SIMULATION ===================
   useEffect(() => {
     const accidentInterval = setInterval(() => {
       const severities = ["Low", "Medium", "High"];
@@ -95,32 +105,40 @@ function AccidentDetection() {
       const time = now.toLocaleTimeString();
 
       // Update top alert
-      setAccidentAlert({ detected: true, location, severity, time });
+      const newAlert = { detected: true, location, severity, time };
+      setAccidentAlert(newAlert);
+      localStorage.setItem("accidentAlert", JSON.stringify(newAlert));
 
       // Add new accident and remove older than 1 hour
       setAccidentHistory(prev => {
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
         const updated = prev.filter(acc => new Date(acc.date) > oneHourAgo);
-        return [...updated, { severity, time, location, date: now }];
+        const newHistory = [...updated, { severity, time, location, date: now }];
+        localStorage.setItem("accidentHistory", JSON.stringify(newHistory));
+        return newHistory;
       });
 
       // Notify emergency responders
-      setEmergencyResponse(prev => ({
-        ...prev,
-        notified: true,
-        notifiedTime: time,
-        responders: prev.responders.map(res => ({
-          ...res,
-          status: "Busy",
-          eta: `${Math.floor(Math.random() * 10 + 5)} mins`
-        }))
-      }));
-    }, 30000); // keep interval only for simulation
+      setEmergencyResponse(prev => {
+        const updated = {
+          ...prev,
+          notified: true,
+          notifiedTime: time,
+          responders: prev.responders.map(res => ({
+            ...res,
+            status: "Busy",
+            eta: `${Math.floor(Math.random() * 10 + 5)} mins`
+          }))
+        };
+        localStorage.setItem("emergencyResponse", JSON.stringify(updated));
+        return updated;
+      });
+    }, 30000);
 
     return () => clearInterval(accidentInterval);
   }, []);
 
-  // Auto-update responder status
+  // =================== AUTO-UPDATE RESPONDERS ===================
   useEffect(() => {
     const interval = setInterval(() => {
       setEmergencyResponse(prev => {
@@ -128,26 +146,28 @@ function AccidentDetection() {
           if (res.status === "Busy") return { ...res, status: "Available", eta: "" };
           return res;
         });
-        return { ...prev, responders: updatedResponders };
+        const updated = { ...prev, responders: updatedResponders };
+        localStorage.setItem("emergencyResponse", JSON.stringify(updated));
+        return updated;
       });
     }, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // ================= UPDATED SOUND ALERTS =================
+  // =================== SOUND ALERTS ===================
   useEffect(() => {
     if (!accidentAlert.detected) return;
 
     let soundUrl = "";
-    switch(accidentAlert.severity){
+    switch (accidentAlert.severity) {
       case "High":
-        soundUrl = "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"; // loud alarm
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"; // loud
         break;
       case "Medium":
-        soundUrl = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"; // medium beep
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"; // medium
         break;
       case "Low":
-        soundUrl = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"; // soft chime
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"; // soft
         break;
       default:
         return;
@@ -157,10 +177,9 @@ function AccidentDetection() {
     audio.play();
   }, [accidentAlert]);
 
-  // ================= RENDER =================
+  // =================== RENDER ===================
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
-
       {/* Top alert */}
       {accidentAlert.detected && (
         <div
@@ -184,9 +203,8 @@ function AccidentDetection() {
 
       <h2 style={{ marginBottom: "20px" }}>🚑 Accident Detection & Emergency Response</h2>
 
-      {/* DASHBOARD: SIDE BY SIDE */}
+      {/* Dashboard */}
       <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "40px" }}>
-
         {/* Monthly Accident Rating */}
         <div style={{
           width: "400px",
@@ -263,7 +281,7 @@ function AccidentDetection() {
         )}
       </div>
 
-      {/* ================= ACCIDENT RECORD TABLE ================= */}
+      {/* Accident Records Table */}
       <div style={{ marginBottom: "40px" }}>
         <h3>🗂️ Accident Records (last 1 hour)</h3>
         {accidentHistory.length > 0 ? (
@@ -285,19 +303,15 @@ function AccidentDetection() {
                 <tr key={index} style={{ borderBottom: "1px solid #ddd" }}>
                   <td style={{ padding: "12px" }}>{acc.time}</td>
                   <td style={{ padding: "12px" }}>{acc.location}</td>
-                  <td style={{ padding: "12px", color: severityColors[acc.severity] }}>
-                    {acc.severity}
-                  </td>
+                  <td style={{ padding: "12px", color: severityColors[acc.severity] }}>{acc.severity}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : (
-          <p>No accident records in the last 1 hour.</p>
-        )}
+        ) : <p>No accident records in the last 1 hour.</p>}
       </div>
 
-      {/* ================= EMERGENCY RESPONSE ================= */}
+      {/* Emergency Response */}
       {emergencyResponse.notified && (
         <div style={{ marginBottom: "40px" }}>
           <h3>🚑 Emergency Responders Notification</h3>
@@ -338,7 +352,6 @@ function AccidentDetection() {
         }
         `}
       </style>
-
     </div>
   );
 }
