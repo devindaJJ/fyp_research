@@ -1,0 +1,7 @@
+{
+  "short_name": "Traffic",
+  "name": "Traffic Dashboard",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone"
+}

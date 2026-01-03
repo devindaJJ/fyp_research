@@ -3,6 +3,7 @@ import StatisticsCards from './StatisticsCards';
 import ParkingChart from './ParkingChart';
 import RecentActivity from './RecentActivity';
 
+
 const Dashboard = ({ parkingData, statistics, violations }) => {
   return (
     <div className="dashboard">
