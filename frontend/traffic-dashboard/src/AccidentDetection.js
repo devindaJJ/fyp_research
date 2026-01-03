@@ -1,100 +1,58 @@
 import React, { useEffect, useState } from "react";
 
 function AccidentDetection() {
-
-  /* ================= ACCIDENT ALERT (HARDCODED) ================= */
   const [accidentAlert, setAccidentAlert] = useState({
-    detected: true,
-    location: "Highway Section B",
-    severity: "High", // High | Medium | Low
-    time: "2026-01-03 14:25"
+    detected: false,
+    location: "",
+    severity: "",
+    time: ""
   });
 
-  /* ================= EMERGENCY RESPONDERS (SIMULATION) ================= */
+  const [accidentHistory, setAccidentHistory] = useState([]);
+
   const [emergencyResponse, setEmergencyResponse] = useState({
-    notified: accidentAlert.detected,
-    notifiedTime: "2026-01-03 14:26",
+    notified: false,
+    notifiedTime: "",
     responders: [
-      { type: "Ambulance", status: "Busy", eta: "8 mins" },
-      { type: "Police", status: "Available", eta: "5 mins" }
-      // Fire Brigade removed
+      { type: "Ambulance", status: "Available", eta: "" },
+      { type: "Police", status: "Available", eta: "" }
     ]
   });
 
-  /* ================= ALERT COLOR LOGIC ================= */
-  const getAlertStyle = () => {
-    switch (accidentAlert.severity) {
-      case "High":
-        return { backgroundColor: "#f44336", color: "white" };
-      case "Medium":
-        return { backgroundColor: "#ffeb3b", color: "black" };
-      case "Low":
-        return { backgroundColor: "#4caf50", color: "white" };
-      default:
-        return {};
-    }
-  };
-
-  /* ================= SOUND ALERT FOR HIGH ================= */
-  useEffect(() => {
-    if (accidentAlert.detected && accidentAlert.severity === "High") {
-      const audio = new Audio(
-        "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"
-      );
-      audio.play();
-    }
-  }, []);
-
-  /* ================= MONTHLY DATA ================= */
-  const data = {
+  const [monthlyData] = useState({
     month: "January 2026",
     low: 8,
     medium: 12,
     high: 8
-  };
-
-  const total = data.low + data.medium + data.high;
-  const lowPct = (data.low / total) * 100;
-  const mediumPct = (data.medium / total) * 100;
-  const highPct = (data.high / total) * 100;
+  });
 
   const radius = 70;
   const circumference = 2 * Math.PI * radius;
 
-  /* ================= SAFETY STATUS ================= */
-  const safetyStatus =
-    data.high > 10 ? "Poor" :
-    data.medium > 10 ? "Average" :
-    "Good";
+  const severityColors = {
+    High: "#f44336",   // red
+    Medium: "#4caf50", // green
+    Low: "#ffeb3b"     // yellow
+  };
 
-  /* ================= BLINK EFFECT ================= */
-  const blinkStyle =
-    accidentAlert.severity === "High"
-      ? { animation: "blink 1s infinite" }
-      : {};
+  const severityToNumber = (severity) => {
+    switch(severity){
+      case "Low": return 1;
+      case "Medium": return 2;
+      case "High": return 3;
+      default: return 0;
+    }
+  };
 
-  /* ================= AUTO-UPDATE RESPONDER STATUS ================= */
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setEmergencyResponse(prev => {
-        const updatedResponders = prev.responders.map(res => {
-          if (res.status === "Busy") {
-            // simulate task finished randomly
-            return { ...res, status: "Available" };
-          }
-          return res;
-        });
-        return { ...prev, responders: updatedResponders };
-      });
-    }, 60000); // every 60 seconds
-    return () => clearInterval(interval);
-  }, []);
+  const getAlertStyle = () => ({
+    backgroundColor: severityColors[accidentAlert.severity] || "#ddd",
+    color: accidentAlert.severity === "Low" ? "#000" : "#fff"
+  });
 
-  /* ================= COUNT ACTIVE/AVAILABLE RESPONDERS ================= */
-  const activeCount = emergencyResponse.responders.filter(r => r.status !== "Available").length;
-  const availableCount = emergencyResponse.responders.filter(r => r.status === "Available").length;
+  const blinkStyle = accidentAlert.severity === "High"
+    ? { animation: "blink 1s infinite" }
+    : {};
 
-  /* ================= GET RESPONDER COLOR ================= */
   const getResponderColor = (status) => {
     switch(status){
       case "Available": return "green";
@@ -102,12 +60,94 @@ function AccidentDetection() {
       case "Offline": return "red";
       default: return "black";
     }
-  }
+  };
+
+  const activeCount = emergencyResponse.responders.filter(r => r.status !== "Available").length;
+  const availableCount = emergencyResponse.responders.filter(r => r.status === "Available").length;
+
+  const total = monthlyData.low + monthlyData.medium + monthlyData.high;
+  const lowPct = (monthlyData.low / total) * 100;
+  const mediumPct = (monthlyData.medium / total) * 100;
+  const highPct = (monthlyData.high / total) * 100;
+
+  const safetyStatus =
+    monthlyData.high > 10 ? "Poor" :
+    monthlyData.medium > 10 ? "Average" :
+    "Good";
+
+  // ================= SIMULATE REAL-TIME ACCIDENT =================
+  useEffect(() => {
+    const accidentInterval = setInterval(() => {
+      const severities = ["Low", "Medium", "High"];
+      const severity = severities[Math.floor(Math.random() * severities.length)];
+
+      const locations = [
+        "Main Road Junction A",
+        "Highway Section B",
+        "Downtown Intersection",
+        "Bridge Approach",
+        "Tunnel Entrance",
+        "School Zone"
+      ];
+      const location = locations[Math.floor(Math.random() * locations.length)];
+
+      const now = new Date();
+      const time = now.toLocaleTimeString();
+
+      // Update top alert
+      setAccidentAlert({ detected: true, location, severity, time });
+
+      // Add new accident and remove older than 1 hour
+      setAccidentHistory(prev => {
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+        const updated = prev.filter(acc => new Date(acc.date) > oneHourAgo);
+        return [...updated, { severity, time, location, date: now }];
+      });
+
+      // Notify emergency responders
+      setEmergencyResponse(prev => ({
+        ...prev,
+        notified: true,
+        notifiedTime: time,
+        responders: prev.responders.map(res => ({
+          ...res,
+          status: "Busy",
+          eta: `${Math.floor(Math.random() * 10 + 5)} mins`
+        }))
+      }));
+    }, 30000); // keep interval only for simulation
+
+    return () => clearInterval(accidentInterval);
+  }, []);
+
+  // Auto-update responder status
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setEmergencyResponse(prev => {
+        const updatedResponders = prev.responders.map(res => {
+          if (res.status === "Busy") return { ...res, status: "Available", eta: "" };
+          return res;
+        });
+        return { ...prev, responders: updatedResponders };
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Play alarm sound for High severity
+  useEffect(() => {
+    if (accidentAlert.detected && accidentAlert.severity === "High") {
+      const audio = new Audio(
+        "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"
+      );
+      audio.play();
+    }
+  }, [accidentAlert]);
 
   return (
-    <div style={{ padding: "20px" }}>
+    <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
 
-      {/* ================= TOP ALERT ================= */}
+      {/* Top alert */}
       {accidentAlert.detected && (
         <div
           style={{
@@ -116,7 +156,8 @@ function AccidentDetection() {
             padding: "15px",
             borderRadius: "6px",
             marginBottom: "20px",
-            fontWeight: "bold"
+            fontWeight: "bold",
+            boxShadow: "0 4px 8px rgba(0,0,0,0.2)"
           }}
         >
           🚨 ACCIDENT ALERT ({accidentAlert.severity})
@@ -127,98 +168,153 @@ function AccidentDetection() {
         </div>
       )}
 
-      <h2>🚑 Accident Detection & Emergency Response</h2>
-      <h3>📊 Monthly Accident Rating – {data.month}</h3>
+      <h2 style={{ marginBottom: "20px" }}>🚑 Accident Detection & Emergency Response</h2>
 
-      {/* ================= CIRCLE CHART ================= */}
-      <div style={{ display: "flex", gap: "40px", alignItems: "center" }}>
-        <svg width="180" height="180" viewBox="0 0 180 180">
-          <g transform="rotate(-90 90 90)">
-            <circle cx="90" cy="90" r={radius} fill="none" stroke="red" strokeWidth="18"
-              strokeDasharray={`${(highPct / 100) * circumference} ${circumference}`} />
-            <circle cx="90" cy="90" r={radius} fill="none" stroke="blue" strokeWidth="18"
-              strokeDasharray={`${(mediumPct / 100) * circumference} ${circumference}`}
-              strokeDashoffset={`-${(highPct / 100) * circumference}`} />
-            <circle cx="90" cy="90" r={radius} fill="none" stroke="green" strokeWidth="18"
-              strokeDasharray={`${(lowPct / 100) * circumference} ${circumference}`}
-              strokeDashoffset={`-${((highPct + mediumPct) / 100) * circumference}`} />
-          </g>
+      {/* DASHBOARD: SIDE BY SIDE */}
+      <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "40px" }}>
 
-          <text x="90" y="95" textAnchor="middle" fontSize="20" fontWeight="bold">
-            {total}
-          </text>
-          <text x="90" y="115" textAnchor="middle" fontSize="12">
-            Accidents
-          </text>
-        </svg>
-
-        <div>
-          <p><span style={{ color: "red" }}>⬤</span> High: {data.high}</p>
-          <p><span style={{ color: "blue" }}>⬤</span> Medium: {data.medium}</p>
-          <p><span style={{ color: "green" }}>⬤</span> Low: {data.low}</p>
+        {/* Monthly Accident Rating */}
+        <div style={{
+          width: "400px",
+          backgroundColor: "#fff",
+          borderRadius: "10px",
+          padding: "20px",
+          boxShadow: "0 8px 16px rgba(0,0,0,0.25)"
+        }}>
+          <h3 style={{ textAlign: "center" }}>📊 Monthly Accident Rating – {monthlyData.month}</h3>
+          <div style={{ display: "flex", gap: "20px", alignItems: "center", justifyContent: "center" }}>
+            <svg width="150" height="150" viewBox="0 0 180 180">
+              <g transform="rotate(-90 90 90)">
+                <circle cx="90" cy="90" r={radius} fill="none" stroke={severityColors.High} strokeWidth="18"
+                  strokeDasharray={`${(highPct / 100) * circumference} ${circumference}`} />
+                <circle cx="90" cy="90" r={radius} fill="none" stroke={severityColors.Medium} strokeWidth="18"
+                  strokeDasharray={`${(mediumPct / 100) * circumference} ${circumference}`}
+                  strokeDashoffset={`-${(highPct / 100) * circumference}`} />
+                <circle cx="90" cy="90" r={radius} fill="none" stroke={severityColors.Low} strokeWidth="18"
+                  strokeDasharray={`${(lowPct / 100) * circumference} ${circumference}`}
+                  strokeDashoffset={`-${((highPct + mediumPct) / 100) * circumference}`} />
+              </g>
+              <text x="90" y="95" textAnchor="middle" fontSize="18" fontWeight="bold">{total}</text>
+              <text x="90" y="115" textAnchor="middle" fontSize="12">Accidents</text>
+            </svg>
+            <div>
+              <p><span style={{ color: severityColors.High }}>⬤</span> High: {monthlyData.high}</p>
+              <p><span style={{ color: severityColors.Medium }}>⬤</span> Medium: {monthlyData.medium}</p>
+              <p><span style={{ color: severityColors.Low }}>⬤</span> Low: {monthlyData.low}</p>
+            </div>
+          </div>
+          <h4 style={{ marginTop: "15px", textAlign: "center" }}>
+            🚦 Overall Safety Status:{" "}
+            <span style={{
+              color:
+                safetyStatus === "Poor" ? "red" :
+                safetyStatus === "Average" ? "orange" :
+                "green"
+            }}>{safetyStatus}</span>
+          </h4>
         </div>
+
+        {/* Accident Severity History */}
+        {accidentHistory.length > 0 && (
+          <div style={{
+            width: "400px",
+            backgroundColor: "#fff",
+            borderRadius: "10px",
+            padding: "20px",
+            boxShadow: "0 8px 16px rgba(0,0,0,0.25)"
+          }}>
+            <h3 style={{ textAlign: "center" }}>📈 Accident Severity Over Time</h3>
+            <svg width="360" height="180">
+              <line x1="40" y1="160" x2="340" y2="160" stroke="#000" strokeWidth="2"/>
+              <line x1="40" y1="20" x2="40" y2="160" stroke="#000" strokeWidth="2"/>
+              {accidentHistory.map((acc, index) => {
+                if(index === 0) return null;
+                const prev = accidentHistory[index-1];
+                const x1 = 40 + (index-1) * 30;
+                const y1 = 160 - severityToNumber(prev.severity) * 40;
+                const x2 = 40 + index * 30;
+                const y2 = 160 - severityToNumber(acc.severity) * 40;
+                return <line key={index} x1={x1} y1={y1} x2={x2} y2={y2} stroke={severityColors[acc.severity]} strokeWidth="2"/>
+              })}
+              {accidentHistory.map((acc, index) => {
+                const cx = 40 + index * 30;
+                const cy = 160 - severityToNumber(acc.severity) * 40;
+                return <circle key={index} cx={cx} cy={cy} r="5" fill={severityColors[acc.severity]}/>
+              })}
+              <text x="0" y="40" fontSize="12">High</text>
+              <text x="0" y="80" fontSize="12">Medium</text>
+              <text x="0" y="120" fontSize="12">Low</text>
+            </svg>
+          </div>
+        )}
       </div>
 
-      {/* ================= SAFETY STATUS ================= */}
-      <h3>
-        🚦 Overall Safety Status:{" "}
-        <span style={{
-          color:
-            safetyStatus === "Poor" ? "red" :
-            safetyStatus === "Average" ? "orange" :
-            "green"
-        }}>
-          {safetyStatus}
-        </span>
-      </h3>
-
-      {/* ================= ACCIDENT RECORD ================= */}
-      <h3>🗂️ Accident Record</h3>
-      <table border="1" cellPadding="8" width="100%">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Location</th>
-            <th>Severity</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{accidentAlert.time}</td>
-            <td>{accidentAlert.location}</td>
-            <td>{accidentAlert.severity}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {/* ================= EMERGENCY RESPONSE PANEL ================= */}
-      {emergencyResponse.notified && (
-        <>
-          <h3>🚑 Emergency Responders Notification</h3>
-          <p>📨 Notified at: <strong>{emergencyResponse.notifiedTime}</strong></p>
-          <p>🟢 Available: {availableCount} | 🔴 Busy: {activeCount}</p>
-          <table border="1" cellPadding="8" width="100%">
-            <thead>
+      {/* ================= ACCIDENT RECORD TABLE ================= */}
+      <div style={{ marginBottom: "40px" }}>
+        <h3>🗂️ Accident Records (last 1 hour)</h3>
+        {accidentHistory.length > 0 ? (
+          <table style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            textAlign: "left",
+            boxShadow: "0 4px 8px rgba(0,0,0,0.2)"
+          }}>
+            <thead style={{ backgroundColor: "#f2f2f2" }}>
               <tr>
-                <th>Responder</th>
-                <th>Status</th>
-                <th>ETA</th>
+                <th style={{ padding: "12px", border: "1px solid #ddd" }}>Time</th>
+                <th style={{ padding: "12px", border: "1px solid #ddd" }}>Location</th>
+                <th style={{ padding: "12px", border: "1px solid #ddd" }}>Severity</th>
               </tr>
             </thead>
             <tbody>
-              {emergencyResponse.responders.map((res, index) => (
-                <tr key={index}>
-                  <td>{res.type}</td>
-                  <td style={{color: getResponderColor(res.status)}}>{res.status}</td>
-                  <td>{res.eta}</td>
+              {accidentHistory.map((acc, index) => (
+                <tr key={index} style={{ borderBottom: "1px solid #ddd" }}>
+                  <td style={{ padding: "12px" }}>{acc.time}</td>
+                  <td style={{ padding: "12px" }}>{acc.location}</td>
+                  <td style={{ padding: "12px", color: severityColors[acc.severity] }}>
+                    {acc.severity}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </>
+        ) : (
+          <p>No accident records in the last 1 hour.</p>
+        )}
+      </div>
+
+      {/* ================= EMERGENCY RESPONSE ================= */}
+      {emergencyResponse.notified && (
+        <div style={{ marginBottom: "40px" }}>
+          <h3>🚑 Emergency Responders Notification</h3>
+          <p>📨 Notified at: <strong>{emergencyResponse.notifiedTime}</strong></p>
+          <p>🟢 Available: {availableCount} | 🔴 Busy: {activeCount}</p>
+          <table style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            textAlign: "left",
+            boxShadow: "0 4px 8px rgba(0,0,0,0.2)"
+          }}>
+            <thead style={{ backgroundColor: "#f2f2f2" }}>
+              <tr>
+                <th style={{ padding: "12px", border: "1px solid #ddd" }}>Responder</th>
+                <th style={{ padding: "12px", border: "1px solid #ddd" }}>Status</th>
+                <th style={{ padding: "12px", border: "1px solid #ddd" }}>ETA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emergencyResponse.responders.map((res, index) => (
+                <tr key={index} style={{ borderBottom: "1px solid #ddd" }}>
+                  <td style={{ padding: "12px" }}>{res.type}</td>
+                  <td style={{ padding: "12px", color: getResponderColor(res.status) }}>{res.status}</td>
+                  <td style={{ padding: "12px" }}>{res.eta}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {/* ================= BLINK STYLE ================= */}
       <style>
         {`
         @keyframes blink {
