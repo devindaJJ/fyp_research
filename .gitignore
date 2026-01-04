@@ -299,4 +299,4 @@ anpr-env/
 env/
 venv/
 datasets/
-datasets/number-plate-detection-sri-lanka/
+!datasets/number-plate-detection-sri-lanka/
