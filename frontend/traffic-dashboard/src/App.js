@@ -71,7 +71,7 @@ function App() {
             className={activeTab === 'violations' ? 'active' : ''}
             onClick={() => setActiveTab('violations')}
           >
-            🚨 Violations
+             Violations
           </button>
           <button
             className={activeTab === 'map' ? 'active' : ''}
