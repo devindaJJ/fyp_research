@@ -314,7 +314,7 @@ function AccidentDetection() {
       {/* Emergency Response */}
       {emergencyResponse.notified && (
         <div style={{ marginBottom: "40px" }}>
-          <h3>🚑 Emergency Responders Notification</h3>
+          <h3> Emergency Responders Notification</h3>
           <p>📨 Notified at: <strong>{emergencyResponse.notifiedTime}</strong></p>
           <p>🟢 Available: {availableCount} | 🔴 Busy: {activeCount}</p>
           <table style={{
