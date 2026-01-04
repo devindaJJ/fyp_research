@@ -212,6 +212,13 @@ yarn-debug.log*
 yarn-error.log*
 package-lock.json
 yarn.lock
+.npm/
+.yarn/
+
+# Frontend build outputs
+frontend/traffic-dashboard/build/
+frontend/traffic-dashboard/dist/
+frontend/traffic-dashboard/.parcel-cache/
 
 # IDE and Editor files
 .vscode/
@@ -229,17 +236,41 @@ data/exports/*.json
 *.csv
 *.log
 
-# Model files (optional - uncomment if you want to ignore large model files)
-# *.h5
-# *.pkl
-# *.joblib
+# Model and data files
+*.h5
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+models/**/*.pkl
+models/**/*.h5
+src/models/trained/
 
-# API keys and secrets
+# Virtual environments
+anpr-env/
+.venv/
+env/
+venv/
+
+# Node modules and dependencies
+node_modules/
+frontend/traffic-dashboard/node_modules/
+
+# Large dataset files
+*.zip
+*.tar.gz
+*.tar
+videos/
+raw_data/
+datasets/
 .env
 .env.local
 .env.*.local
 config/*_private.json
 **/api_keys.json
+keys/credentials.json
+**/credentials.json
 
 # Build outputs
 *.pyc
@@ -249,7 +280,7 @@ config/*_private.json
 build/
 dist/
 *.egg-info/
-
+.txt
 # OS specific
 Thumbs.db
 .DS_Store
@@ -262,3 +293,10 @@ desktop.ini
 *.backup
 *~
 
+# Virtual environments
+anpr-env/
+.venv/
+env/
+venv/
+datasets/
+!datasets/number-plate-detection-sri-lanka/
