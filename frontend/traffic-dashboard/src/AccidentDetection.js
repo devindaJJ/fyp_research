@@ -126,7 +126,7 @@ function AccidentDetection() {
           notifiedTime: time,
           responders: prev.responders.map(res => ({
             ...res,
-            status: "Busy",
+            status: "available",
             eta: `${Math.floor(Math.random() * 10 + 5)} mins`
           }))
         };
