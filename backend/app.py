@@ -1,195 +1,300 @@
+import time
+import logging
+import joblib
+import os
+import gspread
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import json
 from datetime import datetime, timedelta
-import threading
-import time
-import random
 from collections import deque
+from google.oauth2.service_account import Credentials
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app)  
 
-# In-memory storage for accidents and vibration data
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, 'src', 'models', 'trained')
+
+logging.info(f"Looking for models in: {MODEL_PATH}")
+
+try:
+    model_distance_path = os.path.join(MODEL_PATH, 'model_distance_violation.pkl')
+    model_impact_path = os.path.join(MODEL_PATH, 'model_impact_detected.pkl')
+    model_alert_path = os.path.join(MODEL_PATH, 'model_alert_level.pkl')
+    
+    logging.info(f"Checking files:")
+    logging.info(f"  Distance model exists: {os.path.exists(model_distance_path)}")
+    logging.info(f"  Impact model exists: {os.path.exists(model_impact_path)}")
+    logging.info(f"  Alert model exists: {os.path.exists(model_alert_path)}")
+    
+    model_distance = joblib.load(model_distance_path)
+    model_impact = joblib.load(model_impact_path)
+    model_alert = joblib.load(model_alert_path)
+    
+    logging.info("ML Models loaded successfully")
+except FileNotFoundError as e:
+    logging.error(f"Model files not found: {e}")
+    logging.error(f"   Please ensure models are in: {MODEL_PATH}")
+    model_distance = None
+    model_impact = None
+    model_alert = None
+except Exception as e:
+    logging.error(f"Error loading ML models: {e}")
+    model_distance = None
+    model_impact = None
+    model_alert = None
+
 accidents = []
-vibration_data_history = deque(maxlen=1000)  # Store last 1000 readings
+vibration_data_history = deque(maxlen=1000)
 alerts = []
 connected_devices = {}
+ml_predictions = []
 
-# Configuration
-ACCIDENT_THRESHOLD = 100.0  # Hz threshold for accident detection
-NORMAL_VIBRATION_RANGE = (5.0, 30.0)  # Normal vibration range in Hz
-ACCIDENT_COOLDOWN = 60  # seconds before allowing another accident from same device
+ACCIDENT_THRESHOLD = 100.0
+NORMAL_VIBRATION_RANGE = (5.0, 30.0)
+ACCIDENT_COOLDOWN = 60
 
-class AccidentDetector:
+def init_google_sheets():
+    try:
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        creds = Credentials.from_service_account_file(
+            os.getenv('SERVICE_ACCOUNT_CREDS', '../keys/credentials.json'),
+            scopes=scopes
+        )
+        client = gspread.authorize(creds)
+        sheet_id = os.getenv('SHEET_ID')
+        sheet = client.open_by_key(sheet_id)
+        worksheet = sheet.worksheet('AccidentLogs')
+        return worksheet
+    except Exception as e:
+        logging.error(f"Google Sheets initialization error: {e}")
+        return None
+
+worksheet = init_google_sheets()
+
+def load_accidents_from_sheets():
+        """Load existing accidents from Google Sheets on startup"""
+        if not worksheet:
+            return
+        
+        try:
+            records = worksheet.get_all_records()
+            logging.info(f"Loading {len(records)} records from Google Sheets...")
+            
+            for record in records:
+                try:
+                    # Parse the record
+                    timestamp = record.get('Timestamp', '')
+                    device_id = record.get('Device ID', 'UNKNOWN')
+                    distance = int(record.get('Distance (cm)', 0))
+                    impact_detected = 1 if record.get('Impact Detected', 'NO') == 'YES' else 0
+                    total_impacts = int(record.get('Total Impacts', 0))
+                    location = record.get('Status', 'Unknown Location') 
+                    alert_level_text = record.get('Alert Level', 'NORMAL')
+                    
+                    # Convert alert level text to number
+                    alert_level_map = {'NORMAL': 0, 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'CRITICAL': 4}
+                    alert_level = alert_level_map.get(alert_level_text, 1)
+                    
+                    # Determine severity
+                    severity_map = {0: 'low', 1: 'low', 2: 'medium', 3: 'high', 4: 'critical'}
+                    severity = severity_map.get(alert_level, 'medium')
+                    
+                    # Create accident record
+                    accident = {
+                        'id': f"acc_{device_id}_{timestamp}",
+                        'device_id': device_id,
+                        'distance': distance,
+                        'impact_detected': impact_detected,
+                        'total_impacts': total_impacts,
+                        'severity': severity,
+                        'location': location,
+                        'timestamp': timestamp,
+                        'status': 'historical',
+                        'confirmed': True,
+                        'ml_prediction': {
+                            'alert_level': alert_level,
+                            'alert_level_text': alert_level_text,
+                            'distance_violation': 1 if record.get('Distance Violation', 'NO') == 'YES' else 0,
+                            'impact_detected': impact_detected
+                        }
+                    }
+                    
+                    detector.accident_log.append(accident)
+                    
+                    # Update device status
+                    if device_id not in connected_devices:
+                        connected_devices[device_id] = {
+                            'device_id': device_id,
+                            'location': location,
+                            'status': 'online',
+                            'last_seen': timestamp,
+                            'distance': distance,
+                            'impact_detected': impact_detected,
+                            'total_impacts': total_impacts
+                        }
+                    
+                except Exception as e:
+                    logging.error(f"Error parsing record: {e}")
+                    continue
+            
+            logging.info(f"Loaded {len(detector.accident_log)} accidents from Google Sheets")
+            
+        except Exception as e:
+            logging.error(f"Error loading data from Google Sheets: {e}")
+
+class MLAccidentDetector:
     def __init__(self):
         self.accident_log = []
         self.device_last_accident = {}
         self.running = True
-        
-    def analyze_vibration(self, device_id, vibration_hz, location, timestamp):
-        """Analyze vibration data to detect accidents"""
-        
-        # Store vibration data
-        vibration_data_history.append({
-            "device_id": device_id,
-            "vibration_hz": vibration_hz,
-            "location": location,
-            "timestamp": timestamp
-        })
-        
-        # Check for accident conditions
-        is_accident = False
-        severity = "low"
-        
-        if vibration_hz > ACCIDENT_THRESHOLD:
-            is_accident = True
-            severity = "critical"
-        elif vibration_hz > ACCIDENT_THRESHOLD * 0.7:
-            is_accident = True
-            severity = "high"
-        elif vibration_hz > ACCIDENT_THRESHOLD * 0.5:
-            is_accident = True
-            severity = "medium"
-        
-        # Check cooldown period
-        if is_accident and device_id in self.device_last_accident:
-            last_accident_time = self.device_last_accident[device_id]
-            time_diff = (datetime.now() - last_accident_time).total_seconds()
-            if time_diff < ACCIDENT_COOLDOWN:
-                return None  # Still in cooldown
-        
-        if is_accident:
-            # Log the accident
-            accident = {
-                "id": f"acc_{device_id}_{int(time.time())}",
-                "device_id": device_id,
-                "vibration_hz": vibration_hz,
-                "severity": severity,
-                "location": location,
-                "timestamp": timestamp,
-                "status": "detected",
-                "confirmed": False,
-                "responded": False
-            }
             
-            self.accident_log.append(accident)
-            self.device_last_accident[device_id] = datetime.now()
+    def predict_with_ml(self, distance, impact_detected, total_impacts):
+        """Use ML models to predict accident characteristics"""
+        if not all([model_distance, model_impact, model_alert]):
+            return None
             
-            # Create alert
-            alert = {
-                "id": f"alert_{device_id}_{int(time.time())}",
-                "type": "accident",
-                "title": f"Accident Detected - {severity.upper()}",
-                "message": f"High vibration ({vibration_hz:.2f} Hz) detected at {location}",
-                "severity": severity,
-                "device_id": device_id,
-                "location": location,
-                "timestamp": datetime.now().isoformat(),
-                "read": False,
-                "accident_id": accident["id"]
-            }
-            
-            alerts.append(alert)
-            
-            # Keep only last 100 alerts
-            if len(alerts) > 100:
-                alerts.pop(0)
-            
-            return accident
-        
-        return None
-
-# Initialize detector
-detector = AccidentDetector()
-
-# Simulate device data (replace with actual IoT device connections)
-def simulate_device_data():
-    """Simulate IoT devices sending vibration data"""
-    locations = [
-        "Main Road Junction A",
-        "Highway Section B",
-        "Downtown Intersection",
-        "Bridge Approach",
-        "Tunnel Entrance",
-        "School Zone"
-    ]
-    
-    devices = [
-        {"id": "device_001", "type": "vibration_sensor", "location": locations[0]},
-        {"id": "device_002", "type": "vibration_sensor", "location": locations[1]},
-        {"id": "device_003", "type": "vibration_sensor", "location": locations[2]},
-        {"id": "device_004", "type": "accelerometer", "location": locations[3]},
-        {"id": "device_005", "type": "seismic_sensor", "location": locations[4]}
-    ]
-    
-    while detector.running:
         try:
-            for device in devices:
-                # Simulate normal traffic vibration (5-30 Hz)
-                base_vibration = random.uniform(5.0, 30.0)
-                
-                # Occasionally simulate accidents (1% chance)
-                if random.random() < 0.01:
-                    vibration = random.uniform(80.0, 200.0)  # Accident vibration
-                else:
-                    vibration = base_vibration + random.uniform(-2.0, 2.0)
-                
-                # Update device status
-                connected_devices[device["id"]] = {
-                    "device_id": device["id"],
-                    "type": device["type"],
-                    "location": device["location"],
-                    "status": "online",
-                    "last_seen": datetime.now().isoformat(),
-                    "current_vibration": vibration,
-                    "battery": random.randint(60, 100)
-                }
-                
-                # Analyze for accidents
-                detector.analyze_vibration(
-                    device["id"],
-                    vibration,
-                    device["location"],
-                    datetime.now().isoformat()
-                )
+            features = [[distance, impact_detected, total_impacts]]
             
-            time.sleep(5)  # Simulate 5-second intervals
+            prediction = {
+                'distance_violation': int(model_distance.predict(features)[0]),
+                'impact_detected': int(model_impact.predict(features)[0]),
+                'alert_level': int(model_alert.predict(features)[0])
+            }
             
+            alert_levels = {0: 'NORMAL', 1: 'LOW', 2: 'MEDIUM', 3: 'HIGH', 4: 'CRITICAL'}
+            prediction['alert_level_text'] = alert_levels.get(prediction['alert_level'], 'UNKNOWN')
+            
+            return prediction
         except Exception as e:
-            print(f"Error in device simulation: {e}")
-            time.sleep(10)
+            logging.error(f"ML Prediction error: {e}")
+            return None
+    
+    def analyze_sensor_data(self, device_id, distance, impact_detected, total_impacts, location, timestamp):
+        """Analyze sensor data using ML models"""
+        
+        ml_pred = self.predict_with_ml(distance, impact_detected, total_impacts)
+        
+        if ml_pred:
+            ml_predictions.append({
+                'device_id': device_id,
+                'timestamp': timestamp,
+                'input': {'distance': distance, 'impact': impact_detected, 'total_impacts': total_impacts},
+                'prediction': ml_pred
+            })
+            
+            # Keep only last 500 predictions
+            if len(ml_predictions) > 500:
+                ml_predictions.pop(0)
+        
+        is_accident = ml_pred and (ml_pred['impact_detected'] == 1 or ml_pred['alert_level'] >= 2)
+        
+        if not is_accident:
+            return None
+            
+        if device_id in self.device_last_accident:
+            last_time = self.device_last_accident[device_id]
+            time_diff = (datetime.now() - last_time).total_seconds()
+            if time_diff < ACCIDENT_COOLDOWN:
+                return None
+        
+        severity_map = {0: 'low', 1: 'low', 2: 'medium', 3: 'high', 4: 'critical'}
+        severity = severity_map.get(ml_pred['alert_level'], 'medium')
+        
+        accident = {
+            'id': f"acc_{device_id}_{int(time.time())}",
+            'device_id': device_id,
+            'distance': distance,
+            'impact_detected': impact_detected,
+            'total_impacts': total_impacts,
+            'severity': severity,
+            'location': location,
+            'timestamp': timestamp,
+            'status': 'detected',
+            'confirmed': False,
+            'ml_prediction': ml_pred
+        }
+        
+        self.accident_log.append(accident)
+        self.device_last_accident[device_id] = datetime.now()
+        
+        alert = {
+            'id': f"alert_{device_id}_{int(time.time())}",
+            'type': 'accident',
+            'title': f"🚨 Accident Detected - {severity.upper()}",
+            'message': f"ML Model detected accident at {location}. Distance: {distance}cm, Impact: {impact_detected}, Total Impacts: {total_impacts}",
+            'severity': severity,
+            'device_id': device_id,
+            'location': location,
+            'timestamp': datetime.now().isoformat(),
+            'read': False,
+            'accident_id': accident['id']
+        }
+        
+        alerts.append(alert)
+        if len(alerts) > 100:
+            alerts.pop(0)
+        
+        if worksheet:
+            try:
+                row = [
+                    timestamp,
+                    device_id,
+                    distance,
+                    'YES' if impact_detected else 'NO',
+                    'YES' if ml_pred['distance_violation'] else 'NO',
+                    total_impacts,
+                    0,  
+                    timestamp,
+                    0,  
+                    0,  
+                    'Active',
+                    ml_pred['alert_level_text']
+                ]
+                worksheet.append_row(row)
+            except Exception as e:
+                logging.error(f"Error logging to Google Sheets: {e}")
+        
+        return accident
 
-# Start simulation in background thread
-simulation_thread = threading.Thread(target=simulate_device_data, daemon=True)
-simulation_thread.start()
+detector = MLAccidentDetector()
+load_accidents_from_sheets()
 
+# API Routes
 @app.route('/')
 def home():
     return jsonify({
-        "message": "Accident Detection API is running!",
+        "message": "ML-Powered Accident Detection API",
+        "ml_models_loaded": all([model_distance, model_impact, model_alert]),
         "endpoints": {
             "accidents": "/api/accidents",
             "alerts": "/api/alerts",
-            "vibration_data": "/api/vibration-data",
+            "sensor_data": "/api/sensor-data",
             "devices": "/api/devices",
-            "statistics": "/api/statistics"
+            "statistics": "/api/statistics",
+            "ml_predictions": "/api/ml-predictions"
         }
     })
 
-# Receive vibration data from IoT devices
-@app.route('/api/vibration-data', methods=['POST'])
-def receive_vibration_data():
+@app.route('/api/sensor-data', methods=['POST'])
+def receive_sensor_data():
+    """Receive sensor data from IoT devices (ESP32)"""
     try:
         data = request.get_json()
         
-        if not data:
-            return jsonify({
-                "success": False,
-                "error": "No data provided"
-            }), 400
-        
-        required_fields = ['device_id', 'vibration_hz', 'location']
+        required_fields = ['device_id', 'distance', 'location']
         for field in required_fields:
             if field not in data:
                 return jsonify({
@@ -197,37 +302,36 @@ def receive_vibration_data():
                     "error": f"Missing required field: {field}"
                 }), 400
         
+        # Extract data
+        device_id = data['device_id']
+        distance = float(data['distance'])
+        impact_detected = int(data.get('impact_detected', 0))
+        total_impacts = int(data.get('total_impacts', 0))
+        location = data['location']
+        timestamp = data.get('timestamp', datetime.now().isoformat())
+        
         # Update device status
-        connected_devices[data['device_id']] = {
-            "device_id": data['device_id'],
-            "type": data.get('type', 'vibration_sensor'),
-            "location": data['location'],
-            "status": "online",
-            "last_seen": datetime.now().isoformat(),
-            "current_vibration": data['vibration_hz'],
-            "battery": data.get('battery', 100)
+        connected_devices[device_id] = {
+            'device_id': device_id,
+            'location': location,
+            'status': 'online',
+            'last_seen': datetime.now().isoformat(),
+            'distance': distance,
+            'impact_detected': impact_detected,
+            'total_impacts': total_impacts
         }
         
-        # Analyze for accidents
-        timestamp = data.get('timestamp', datetime.now().isoformat())
-        accident = detector.analyze_vibration(
-            data['device_id'],
-            float(data['vibration_hz']),
-            data['location'],
-            timestamp
+        # Analyze with ML
+        accident = detector.analyze_sensor_data(
+            device_id, distance, impact_detected, total_impacts, location, timestamp
         )
         
-        response = {
+        return jsonify({
             "success": True,
-            "message": "Vibration data received",
-            "accident_detected": accident is not None
-        }
-        
-        if accident:
-            response["accident"] = accident
-            response["alert_id"] = f"alert_{data['device_id']}_{int(time.time())}"
-        
-        return jsonify(response)
+            "message": "Sensor data received and analyzed",
+            "accident_detected": accident is not None,
+            "accident": accident
+        })
         
     except Exception as e:
         return jsonify({
@@ -235,47 +339,64 @@ def receive_vibration_data():
             "error": str(e)
         }), 500
 
-# Get all accidents
 @app.route('/api/accidents', methods=['GET'])
 def get_accidents():
+    """Get all accidents"""
     try:
-        # Filter by time if specified
-        hours = request.args.get('hours', type=int)
-        filtered_accidents = detector.accident_log
+        hours = request.args.get('hours', type=int, default=24)
+        cutoff = datetime.now() - timedelta(hours=hours)
         
-        if hours:
-            cutoff = datetime.now() - timedelta(hours=hours)
-            filtered_accidents = [
-                a for a in detector.accident_log
-                if datetime.fromisoformat(a['timestamp'].replace('Z', '+00:00')) > cutoff
-            ]
+        filtered = []
+        for a in detector.accident_log:
+            try:
+                timestamp_str = a.get('timestamp', '')
+                if not timestamp_str:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                except:
+                    try:
+                        ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                    except:
+                        filtered.append(a)
+                        continue
+                
+                if ts > cutoff:
+                    filtered.append(a)
+            except Exception as e:
+                logging.error(f"Error filtering accident: {e}")
+                continue
+        
+        severity_counts = {'low': 0, 'medium': 0, 'high': 0, 'critical': 0}
+        for acc in filtered:
+            severity = acc.get('severity', 'low')
+            if severity in severity_counts:
+                severity_counts[severity] += 1
         
         return jsonify({
             "success": True,
-            "accidents": filtered_accidents,
-            "total_count": len(filtered_accidents),
+            "accidents": filtered,
+            "total_count": len(filtered),
+            "severity_counts": severity_counts,
             "timestamp": datetime.now().isoformat()
         })
     except Exception as e:
+        logging.error(f"Error in get_accidents: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
 
-# Get real-time alerts
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():
+    """Get alerts"""
     try:
         unread_only = request.args.get('unread_only', 'false').lower() == 'true'
-        severity_filter = request.args.get('severity')
-        
         filtered_alerts = alerts
-        
         if unread_only:
             filtered_alerts = [a for a in alerts if not a['read']]
-        
-        if severity_filter:
-            filtered_alerts = [a for a in filtered_alerts if a['severity'] == severity_filter]
         
         return jsonify({
             "success": True,
@@ -288,67 +409,76 @@ def get_alerts():
             "error": str(e)
         }), 500
 
-# Mark alert as read
-@app.route('/api/alerts/<alert_id>/read', methods=['PUT'])
-def mark_alert_read(alert_id):
+@app.route('/api/ml-predictions', methods=['GET'])
+def get_ml_predictions():
+    """Get recent ML predictions"""
     try:
-        for alert in alerts:
-            if alert['id'] == alert_id:
-                alert['read'] = True
-                return jsonify({
-                    "success": True,
-                    "message": "Alert marked as read"
-                })
+        limit = request.args.get('limit', type=int, default=50)
         
         return jsonify({
-            "success": False,
-            "error": "Alert not found"
-        }), 404
+            "success": True,
+            "predictions": ml_predictions[-limit:],
+            "count": len(ml_predictions)
+        })
     except Exception as e:
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
 
-# Update accident status
-@app.route('/api/accidents/<accident_id>/status', methods=['PUT'])
-def update_accident_status(accident_id):
+@app.route('/api/statistics', methods=['GET'])
+def get_statistics():
+    """Get system statistics"""
     try:
-        data = request.get_json()
-        new_status = data.get('status')
-        confirmed = data.get('confirmed')
+        now = datetime.now()
+        last_24h = now - timedelta(hours=24)
         
-        if not new_status and confirmed is None:
-            return jsonify({
-                "success": False,
-                "error": "No status or confirmed value provided"
-            }), 400
-        
-        for accident in detector.accident_log:
-            if accident['id'] == accident_id:
-                if new_status:
-                    accident['status'] = new_status
-                if confirmed is not None:
-                    accident['confirmed'] = bool(confirmed)
+        recent_accidents = []
+        for a in detector.accident_log:
+            try:
+                timestamp_str = a.get('timestamp', '')
+                if not timestamp_str:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                except:
+                    try:
+                        ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                    except:
+                        continue
                 
-                return jsonify({
-                    "success": True,
-                    "accident": accident
-                })
+                if ts > last_24h:
+                    recent_accidents.append(a)
+            except Exception as e:
+                logging.error(f"Error processing accident in statistics: {e}")
+                continue
+        
+        stats = {
+            "total_accidents": len(detector.accident_log),
+            "accidents_last_24h": len(recent_accidents),
+            "active_alerts": len([a for a in alerts if not a['read']]),
+            "connected_devices": len(connected_devices),
+            "ml_models_active": all([model_distance, model_impact, model_alert]),
+            "total_predictions": len(ml_predictions)
+        }
         
         return jsonify({
-            "success": False,
-            "error": "Accident not found"
-        }), 404
+            "success": True,
+            "statistics": stats,
+            "timestamp": now.isoformat()
+        })
     except Exception as e:
+        logging.error(f"Error in get_statistics: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
 
-# Get connected devices
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
+    """Get connected devices"""
     try:
         return jsonify({
             "success": True,
@@ -361,110 +491,8 @@ def get_devices():
             "error": str(e)
         }), 500
 
-# Get vibration data history
-@app.route('/api/vibration-data/history', methods=['GET'])
-def get_vibration_history():
-    try:
-        device_id = request.args.get('device_id')
-        limit = request.args.get('limit', type=int, default=100)
-        
-        filtered_data = list(vibration_data_history)
-        
-        if device_id:
-            filtered_data = [d for d in filtered_data if d['device_id'] == device_id]
-        
-        filtered_data = filtered_data[-limit:]  # Get most recent
-        
-        return jsonify({
-            "success": True,
-            "data": filtered_data,
-            "count": len(filtered_data)
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-# Get system statistics
-@app.route('/api/statistics', methods=['GET'])
-def get_statistics():
-    try:
-        now = datetime.now()
-        last_24h = now - timedelta(hours=24)
-        
-        # Calculate statistics
-        recent_accidents = [
-            a for a in detector.accident_log
-            if datetime.fromisoformat(a['timestamp'].replace('Z', '+00:00')) > last_24h
-        ]
-        
-        critical_accidents = [a for a in recent_accidents if a['severity'] == 'critical']
-        
-        # Get average vibration
-        if vibration_data_history:
-            recent_vibrations = list(vibration_data_history)[-100:]  # Last 100 readings
-            avg_vibration = sum(d['vibration_hz'] for d in recent_vibrations) / len(recent_vibrations)
-        else:
-            avg_vibration = 0
-        
-        stats = {
-            "total_accidents": len(detector.accident_log),
-            "accidents_last_24h": len(recent_accidents),
-            "critical_accidents": len(critical_accidents),
-            "active_alerts": len([a for a in alerts if not a['read']]),
-            "connected_devices": len(connected_devices),
-            "avg_vibration_hz": avg_vibration,
-            "accident_threshold": ACCIDENT_THRESHOLD,
-            "system_uptime": "Running"
-        }
-        
-        return jsonify({
-            "success": True,
-            "statistics": stats,
-            "timestamp": now.isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-# Clear old data (for maintenance)
-@app.route('/api/maintenance/clear-old', methods=['POST'])
-def clear_old_data():
-    try:
-        days = request.args.get('days', type=int, default=30)
-        cutoff = datetime.now() - timedelta(days=days)
-        
-        # Clear old accidents
-        original_count = len(detector.accident_log)
-        detector.accident_log = [
-            a for a in detector.accident_log
-            if datetime.fromisoformat(a['timestamp'].replace('Z', '+00:00')) > cutoff
-        ]
-        
-        # Clear old alerts
-        original_alerts = len(alerts)
-        alerts[:] = [
-            a for a in alerts
-            if datetime.fromisoformat(a['timestamp'].replace('Z', '+00:00')) > cutoff
-        ]
-        
-        return jsonify({
-            "success": True,
-            "message": f"Cleared data older than {days} days",
-            "accidents_removed": original_count - len(detector.accident_log),
-            "alerts_removed": original_alerts - len(alerts)
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
 if __name__ == '__main__':
-    print("Starting Accident Detection API Server...")
-    print(f"Accident Threshold: {ACCIDENT_THRESHOLD} Hz")
-    print(f"Normal Vibration Range: {NORMAL_VIBRATION_RANGE[0]}-{NORMAL_VIBRATION_RANGE[1]} Hz")
+    logging.info("Starting ML-Powered Accident Detection API...")
+    logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
+    logging.info(f"Google Sheets connected: {worksheet is not None}")
     app.run(debug=True, host='0.0.0.0', port=8000)
