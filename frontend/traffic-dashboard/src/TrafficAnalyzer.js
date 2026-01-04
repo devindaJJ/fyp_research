@@ -187,7 +187,7 @@ const TrafficAnalyzer = () => {
             <div className="route-point">
               <strong>From:</strong> {analysis.origin}
             </div>
-            <div className="route-arrow">➡️</div>
+
             <div className="route-point">
               <strong>To:</strong> {analysis.destination}
             </div>
