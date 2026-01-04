@@ -65,7 +65,7 @@ function App() {
             className={activeTab === 'accidents' ? 'active' : ''}
             onClick={() => setActiveTab('accidents')}
           >
-             Accident Detection
+            🚑 Accident Detection
           </button>
           <button
             className={activeTab === 'violations' ? 'active' : ''}
