@@ -308,7 +308,7 @@ function AccidentDetection() {
               ))}
             </tbody>
           </table>
-        ) : <p>No accident records in the last 1 hour.</p>}
+        ) : <p>No accident records in the last 1 hour</p>}
       </div>
 
       {/* Emergency Response */}
