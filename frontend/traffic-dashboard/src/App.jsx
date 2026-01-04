@@ -9,6 +9,7 @@ import NotificationsView from './components/NotificationsView';
 import SmartParking from './components/SmartParking';
 import TrafficMonitoring from './components/TrafficMonitoring';
 import TrafficAnalyzer from './TrafficAnalyzer.jsx';
+import AccidentDetection from './components/AccidentDetection.jsx';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -49,12 +50,7 @@ function App() {
         {activeTab === 'Traffic Monitoring' && <TrafficAnalyzer />}
 
         {/* Placeholders for other tabs */}
-        {activeTab === 'Emergency Response' && (
-          <div className="placeholder-section">
-            <h2>{activeTab}</h2>
-            <p>Module under development.</p>
-          </div>
-        )}
+        {activeTab === 'Emergency Response' && <AccidentDetection />}
       </main>
       <footer style={{ backgroundColor: '#1a237e', height: '50px' }}></footer>
     </div>
