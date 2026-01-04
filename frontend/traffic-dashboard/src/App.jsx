@@ -8,6 +8,7 @@ import ViolationDetection from './components/ViolationDetection';
 import NotificationsView from './components/NotificationsView';
 import SmartParking from './components/SmartParking';
 import TrafficMonitoring from './components/TrafficMonitoring';
+import TrafficAnalyzer from './TrafficAnalyzer.jsx';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -45,7 +46,7 @@ function App() {
 
         {activeTab === 'Notifications' && <NotificationsView />}
 
-        {activeTab === 'Traffic Monitoring' && <TrafficMonitoring />}
+        {activeTab === 'Traffic Monitoring' && <TrafficAnalyzer />}
 
         {/* Placeholders for other tabs */}
         {activeTab === 'Emergency Response' && (
