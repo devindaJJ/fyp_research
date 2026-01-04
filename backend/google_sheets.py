@@ -1,10 +1,14 @@
 import os
+import os
 import gspread
+import pandas as pd
 import datetime
 import time
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -1,0 +1,109 @@
+.stats-bar {
+    display: flex;
+    justify-content: space-around;
+    background-color: var(--bg-white);
+    padding: 1rem 0;
+    border-bottom: 4px solid var(--primary-blue);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    position: relative;
+    z-index: 50;
+}
+
+.stat-item {
+    font-size: 1rem;
+    font-weight: 600;
+    font-style: italic;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 0.5rem 1rem;
+    opacity: 0.8;
+    transition: all 0.2s;
+}
+
+.stat-item:hover {
+    opacity: 1;
+    color: var(--primary-blue);
+}
+
+.stats-notification-container {
+    display: flex;
+    align-items: center;
+    padding: 0 1rem;
+    border-left: 1px solid #e0e0e0;
+}
+
+.notification-bell {
+    position: relative;
+    cursor: pointer;
+    padding: 8px;
+    transition: transform 0.2s;
+}
+
+.notification-bell:hover {
+    transform: scale(1.1);
+}
+
+.stats-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background-color: #ff4757;
+    color: white;
+    font-size: 0.65rem;
+    font-weight: bold;
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    border: 1px solid white;
+}
+
+.notification-popup {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 280px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    display: none;
+    z-index: 1001;
+    overflow: hidden;
+    color: #333;
+    text-align: left;
+    margin-top: 10px;
+    border: 1px solid #eee;
+}
+
+.notification-bell:hover .notification-popup {
+    display: block;
+}
+
+.popup-header {
+    background: #f1f2f6;
+    padding: 10px 15px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #e1e1e1;
+}
+
+.popup-item {
+    padding: 10px 15px;
+    border-bottom: 1px solid #f1f1f1;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.popup-item:hover {
+    background: #f8f9fa;
+}
+
+.popup-item:last-child {
+    border-bottom: none;
+}
