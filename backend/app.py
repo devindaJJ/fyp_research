@@ -30,6 +30,41 @@ def get_parking_data():
             "error": str(e)
         }), 500
 
+
+# Ingest parking record(s) (JSON)
+@app.route('/api/ingest-parking', methods=['POST'])
+def ingest_parking():
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"success": False, "error": "No JSON payload provided"}), 400
+
+        # accept either a single record or a list of records
+        records = payload if isinstance(payload, list) else [payload]
+        appended = 0
+        for rec in records:
+            # Basic validation and normalization
+            rec = rec or {}
+            # Ensure timestamp exists
+            if not rec.get('timestamp') and not rec.get('Time'):
+                rec['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Derive Status if not provided
+            if 'Status' not in rec and 'status' not in rec:
+                dist = rec.get('distance') or rec.get('Distance') or rec.get('Distance_cm') or 9999
+                try:
+                    dval = float(dist)
+                except Exception:
+                    dval = 9999
+                rec['Status'] = 'OCCUPIED' if dval < 200 else 'VACANT'
+
+            sheets_handler.append_parking_record(rec)
+            appended += 1
+
+        return jsonify({"success": True, "appended": appended}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # Get violation alerts
 @app.route('/api/violations', methods=['GET'])
 def get_violations():
@@ -79,5 +114,26 @@ def get_device_health():
             "error": str(e)
         }), 500
 
+
+# Mark an action (dispatch or resolve) against a device/record
+@app.route('/api/mark-action', methods=['POST'])
+def mark_action():
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"success": False, "error": "No JSON payload provided"}), 400
+
+        # Accept single or list
+        actions = payload if isinstance(payload, list) else [payload]
+        appended = 0
+        for act in actions:
+            ok = sheets_handler.append_action(act)
+            if ok:
+                appended += 1
+
+        return jsonify({"success": True, "appended": appended}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8000)
