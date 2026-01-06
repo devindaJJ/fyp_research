@@ -39,10 +39,13 @@ current_session = {
 app = Flask(__name__)
 CORS(app)  
 
-# Register blueprints
 app.register_blueprint(traffic_bp)
 
-sheets_handler = None
+try:
+    sheets_handler = GoogleSheetsHandler()
+except Exception as e:
+    sheets_handler = None
+    logging.error(f"Failed to initialize GoogleSheetsHandler: {e}")
 
 # --- ML models, Google Sheets worksheet, and accident detector (merged from Ishani branch) ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -477,6 +480,41 @@ def get_vehicles():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# Ingest parking record(s) (JSON)
+@app.route('/api/ingest-parking', methods=['POST'])
+def ingest_parking():
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"success": False, "error": "No JSON payload provided"}), 400
+
+        # accept either a single record or a list of records
+        records = payload if isinstance(payload, list) else [payload]
+        appended = 0
+        for rec in records:
+            # Basic validation and normalization
+            rec = rec or {}
+            # Ensure timestamp exists
+            if not rec.get('timestamp') and not rec.get('Time'):
+                rec['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # Derive Status if not provided
+            if 'Status' not in rec and 'status' not in rec:
+                dist = rec.get('distance') or rec.get('Distance') or rec.get('Distance_cm') or 9999
+                try:
+                    dval = float(dist)
+                except Exception:
+                    dval = 9999
+                rec['Status'] = 'OCCUPIED' if dval < 200 else 'VACANT'
+
+            sheets_handler.append_parking_record(rec)
+            appended += 1
+
+        return jsonify({"success": True, "appended": appended}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/detection/violations', methods=['GET'])
@@ -942,7 +980,6 @@ def get_parking_status():
     """Get current parking status from Google Sheets"""
     try:
         parking_data = sheets_handler.get_parking_data()
-        
         return jsonify({
             "success": True,
             "parking_data": parking_data,
@@ -955,6 +992,22 @@ def get_parking_status():
             "error": str(e),
             "parking_data": []
         }), 200
+
+# Add /api/parking-data for compatibility with devinda branch
+@app.route('/api/parking-data', methods=['GET'])
+def get_parking_data():
+    try:
+        data = sheets_handler.get_parking_data()
+        return jsonify({
+            "success": True,
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @app.route('/api/system/overview', methods=['GET'])
@@ -1017,6 +1070,44 @@ def internal_error(error):
         "success": False,
         "error": "Internal server error"
     }), 500
+
+
+# Error Handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        "success": False,
+        "error": "Endpoint not found"
+    }), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({
+        "success": False,
+        "error": "Internal server error"
+    }), 500
+
+
+# Mark an action (dispatch or resolve) against a device/record
+@app.route('/api/mark-action', methods=['POST'])
+def mark_action():
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"success": False, "error": "No JSON payload provided"}), 400
+
+        # Accept single or list
+        actions = payload if isinstance(payload, list) else [payload]
+        appended = 0
+        for act in actions:
+            ok = sheets_handler.append_action(act)
+            if ok:
+                appended += 1
+
+        return jsonify({"success": True, "appended": appended}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     logging.info("Starting Traffic Management + ML Accident Detection API...")

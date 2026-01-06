@@ -6,10 +6,11 @@ import Analytics from './components/Analytics';
 import SplashScreen from './components/SplashScreen';
 import ViolationDetection from './components/ViolationDetection';
 import NotificationsView from './components/NotificationsView';
-import SmartParking from './components/SmartParking';
+import ParkingDetails from './components/ParkingDetails';
 import TrafficMonitoring from './components/TrafficMonitoring';
 import TrafficAnalyzer from './TrafficAnalyzer.jsx';
 import AccidentDetection from './components/AccidentDetection.jsx';
+
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -43,7 +44,7 @@ function App() {
 
         {activeTab === 'Violation Detection' && <ViolationDetection />}
 
-        {activeTab === 'Smart Parking' && <SmartParking />}
+        {activeTab === 'Smart Parking' && <ParkingDetails />}
 
         {activeTab === 'Notifications' && <NotificationsView />}
 
