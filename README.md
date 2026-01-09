@@ -9,68 +9,48 @@ Our system combines Internet of Things technologies, and smart algorithms to cre
 ## System Architecture
 
 ```mermaid
-graph TD
-    %% Input Sources
-    subgraph Input_Sources["Input Sources"]
-        Camera["Camera Network"]
-        Sensors["Traffic Sensors"]
-        ParkingSensors["Smart Parking Sensors"]
-    end
+flowchart LR
+    A[IoT Sensors & Data Sources<br><br>
+       • HD Cameras<br>
+       • Vibration Sensors<br>
+       • Parking Sensors<br>
+       • GPS Modules<br>
+       • Weather APIs] 
+       --> 
 
-    %% Detection Modules
-    subgraph Detection_Modules["Detection Modules"]
-        Congestion["Congestion Detection"]
-        Accident["Accident Detection"]
-        Violation["Rule Violation Detection"]
-        ParkingAvail["Parking Availability Detection"]
-    end
+    B[Data Processing & Cloud<br><br>
+       • Data Cleaning<br>
+       • Storage<br>
+       • APIs<br><br>
+       Technologies:<br>
+       • AWS / Azure<br>
+       • SQL / NoSQL<br>
+       • MQTT / HTTP<br>
+       • Node.js<br>
+       • Python]
+       -->
 
-    %% Messaging Layer
-    EventBus["Message Queue / Event Bus"]
+    C[AI Components & Logic<br><br>
+       • Congestion Prediction<br>
+       • Accident Detection<br>
+       • Violation Analysis<br>
+       • Parking Prediction<br><br>
+       Components:<br>
+       1. Congestion<br>
+       2. Accident<br>
+       3. Violation<br>
+       4. Parking]
+       -->
 
-    %% Core Systems
-    Rerouting["Rerouting System"]
-    Navigation["Navigation Providers"]
-    Dashboard["Dashboard & Analytics"]
-    Emergency["Emergency Services"]
-
-    %% Databases
-    CentralDB[(Central Database)]
-    ViolationDB[(Violation Log Database)]
-
-    %% Client Apps
-    MobileApp["Mobile / Web App"]
-
-    %% Flows: Input -> Detection
-    Camera --> Congestion
-    Camera --> Accident
-    Sensors --> Congestion
-    Sensors --> Accident
-    Sensors --> Violation
-    ParkingSensors --> ParkingAvail
-
-    %% Detection -> Event Bus
-    Congestion --> EventBus
-    Accident --> EventBus
-    Violation --> EventBus
-    ParkingAvail --> EventBus
-
-    %% Event Bus -> Systems
-    EventBus --> Rerouting
-    EventBus --> Dashboard
-    Accident -->|Direct Alert| Emergency
-
-    %% Rerouting & Navigation
-    Rerouting --> Navigation
-    Navigation --> CentralDB
-
-    %% Analytics & Apps
-    Dashboard --> CentralDB
-    Dashboard --> MobileApp
-    MobileApp --> Dashboard
-
-    %% Violations
-    Violation --> ViolationDB
+    D[User Dashboards & Alerts<br><br>
+       • Web/Mobile Interfaces<br>
+       • Emergency Alerts<br>
+       • Traffic Control<br><br>
+       Built With:<br>
+       • React.js Dashboard<br>
+       • Mobile App<br>
+       • Emergency Dashboard]
+```
 
 
 ## Components
