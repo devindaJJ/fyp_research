@@ -8,49 +8,8 @@ Our system combines Internet of Things technologies, and smart algorithms to cre
 
 ## System Architecture
 
-```mermaid
-flowchart LR
-    A[IoT Sensors & Data Sources<br><br>
-       • HD Cameras<br>
-       • Vibration Sensors<br>
-       • Parking Sensors<br>
-       • GPS Modules<br>
-       • Weather APIs] 
-       --> 
+![System Diagram](https://github.com/user-attachments/assets/83afdba8-1cf4-451d-a7f5-c43aa3df26ef)
 
-    B[Data Processing & Cloud<br><br>
-       • Data Cleaning<br>
-       • Storage<br>
-       • APIs<br><br>
-       Technologies:<br>
-       • AWS / Azure<br>
-       • SQL / NoSQL<br>
-       • MQTT / HTTP<br>
-       • Node.js<br>
-       • Python]
-       -->
-
-    C[AI Components & Logic<br><br>
-       • Congestion Prediction<br>
-       • Accident Detection<br>
-       • Violation Analysis<br>
-       • Parking Prediction<br><br>
-       Components:<br>
-       1. Congestion<br>
-       2. Accident<br>
-       3. Violation<br>
-       4. Parking]
-       -->
-
-    D[User Dashboards & Alerts<br><br>
-       • Web/Mobile Interfaces<br>
-       • Emergency Alerts<br>
-       • Traffic Control<br><br>
-       Built With:<br>
-       • React.js Dashboard<br>
-       • Mobile App<br>
-       • Emergency Dashboard]
-```
 
 
 ## Components
