@@ -4,9 +4,11 @@ import 'leaflet/dist/leaflet.css';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { ChevronDown, MapPin, Clock, Calendar, Activity } from 'lucide-react';
 import './TrafficMonitoring.css';
+import TrafficMap from './TrafficMap';
 
 const TrafficMonitoring = () => {
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [routes, setRoutes] = useState([]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -20,6 +22,18 @@ const TrafficMonitoring = () => {
     const formatTime = (date) => {
         return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     };
+
+
+    useEffect(() => {
+    setRoutes([
+        {
+            polyline: "a~l~Fjk~uOwHJy@P",
+            is_primary: true
+        }
+    ]);
+}, []);
+
+
 
     // Mock data for Congestion Analysis chart
     const chartData = [
@@ -116,6 +130,16 @@ const TrafficMonitoring = () => {
                         </div>
                     </div>
                 </div>
+
+                {/* Live Traffic Routes - Google Map */}
+                <div className="tm-section-card map-card">
+                   <h3 className="tm-section-title">Live Traffic Routes (Google Maps)</h3>
+                    <div className="tm-map-wrapper">
+                        <TrafficMap routes={routes} />
+                    </div>
+                </div>
+
+
 
                 <div className="tm-sidebar">
                     <div className="tm-stat-card">
