@@ -14,6 +14,11 @@ from google_sheets import GoogleSheetsHandler
 from traffic_routes import traffic_bp
 from datetime import datetime, timedelta
 from pathlib import Path
+# For Emergency Alert System
+import pandas as pd
+import smtplib
+from email.message import EmailMessage
+
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -579,6 +584,14 @@ def receive_sensor_data():
         }
 
         accident = detector.analyze_sensor_data(device_id, distance, impact_detected, total_impacts, location, timestamp)
+                # Trigger emergency alert automatically if accident detected
+        if accident:
+            try:
+                notify_responders(accident)
+            except Exception as e:
+                logging.warning(f"Emergency alert failed: {e}")
+
+        
 
         return jsonify({
             "success": True,
@@ -1114,3 +1127,50 @@ if __name__ == '__main__':
     logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
     logging.info(f"Google Sheets connected: {worksheet is not None}")
     app.run(debug=True, host='0.0.0.0', port=8000)
+
+# --- Emergency Responders ---
+RESPONDER_FILE = "update_colombo_district_emergency_dataset.csv"  
+try:
+    responders_df = pd.read_excel(RESPONDER_FILE)
+    logging.info(f"Loaded {len(responders_df)} responders from {RESPONDER_FILE}")
+except Exception as e:
+    responders_df = pd.DataFrame()
+    logging.warning(f"Could not load responders file: {e}")
+
+
+def notify_responders(accident):
+    """Send email alerts to all responders"""
+    if responders_df.empty:
+        logging.warning("No responders to notify")
+        return
+
+    for _, row in responders_df.iterrows():
+        name = row.get("Name", "Responder")
+        email = row.get("Email")
+        if not email:
+            continue
+
+        msg = EmailMessage()
+        msg["Subject"] = f"🚨 Emergency Alert: Accident Detected"
+        msg["From"] = "madhukaishani123@gamil.com"  #
+        msg["To"] = email
+        msg.set_content(
+            f"Hello {name},\n\n"
+            f"An accident has been detected!\n"
+            f"Location: {accident.get('location')}\n"
+            f"Severity: {accident.get('severity')}\n"
+            f"Distance: {accident.get('distance')} cm\n"
+            f"Total Impacts: {accident.get('total_impacts')}\n"
+            f"Time: {accident.get('timestamp')}\n\n"
+            "Please respond immediately."
+        )
+
+        try:
+            with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                server.starttls()
+                server.login("your_email@gmail.com", "your_app_password")  # replace
+                server.send_message(msg)
+                logging.info(f"Alert sent to {email}")
+        except Exception as e:
+            logging.warning(f"Failed to send email to {email}: {e}")
+ 
