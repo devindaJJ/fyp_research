@@ -2,8 +2,8 @@
 #include <HTTPClient.h>
 
 // WiFi
-const char* ssid = "SLT-Fiber-KYhN6-2.4G";
-const char* password = "19641125";
+const char* ssid = "";
+const char* password = "";
 
 // Google Sheets
 const char* googleURL = "";
