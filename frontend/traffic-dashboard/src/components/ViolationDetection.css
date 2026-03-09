@@ -324,6 +324,40 @@ tr:hover {
   color: #c62828;
 }
 
+.type-badge.lane {
+  background: #c8e6c9;
+  color: #2e7d32;
+}
+
+.type-badge.dangerous {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.high {
+  background: #ffcdd2;
+  color: #c62828;
+}
+
+.status-badge.medium {
+  background: #fff9c4;
+  color: #f9a825;
+}
+
+.status-badge.low {
+  background: #c8e6c9;
+  color: #2e7d32;
+}
+
 /* Safety Alerts */
 .alerts-grid {
   display: grid;
