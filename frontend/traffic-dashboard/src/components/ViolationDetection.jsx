@@ -7,8 +7,15 @@ export default function ViolationDetection() {
   const [allViolations, setAllViolations] = useState([])
   const [filteredViolations, setFilteredViolations] = useState([])
   const [liveViolations, setLiveViolations] = useState([])
+  const [laneViolations, setLaneViolations] = useState([])
   const [safetyAlerts, setSafetyAlerts] = useState([])
-  const [stats, setStats] = useState({ total: 0, speeding: 0, dangerous: 0, today: 0 })
+  const [stats, setStats] = useState({
+    total: 0,
+    speeding: 0,
+    lane: 0,
+    dangerous: 0,
+    today: 0
+  })
   const [isMonitoring, setIsMonitoring] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -36,8 +43,12 @@ export default function ViolationDetection() {
 
     if (searchQuery) {
       filtered = filtered.filter(v => 
-        v.plate?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        v.location?.toLowerCase().includes(searchQuery.toLowerCase())
+        (v.plate?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (v.plate_number?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (v.location?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (v.violation_type?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (v.track_id?.toString().includes(searchQuery)) ||
+        (v.vehicle_id?.toString().includes(searchQuery))
       )
     }
 
@@ -64,13 +75,15 @@ export default function ViolationDetection() {
 
   const fetchLiveData = async () => {
     try {
-      const [violationsRes, alertsRes, statsRes] = await Promise.all([
+      const [violationsRes, laneViolationsRes, alertsRes, statsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/detection/violations`),
+        fetch(`${API_BASE_URL}/violations/lane`),
         fetch(`${API_BASE_URL}/detection/safety-alerts`),
         fetch(`${API_BASE_URL}/detection/stats`)
       ])
 
       const violationsData = await violationsRes.json()
+      const laneViolationsData = await laneViolationsRes.json()
       const alertsData = await alertsRes.json()
       const statsData = await statsRes.json()
 
@@ -84,6 +97,16 @@ export default function ViolationDetection() {
         setAllViolations(prev => [...violations, ...prev].slice(0, 100))
       }
 
+      if (laneViolationsData.success) {
+        const laneVios = laneViolationsData.violations.map(v => ({
+          ...v,
+          type: 'lane',
+          timestamp: v.timestamp || new Date().toISOString()
+        }))
+        setLaneViolations(laneVios)
+        setAllViolations(prev => [...laneVios, ...prev].slice(0, 100))
+      }
+
       if (alertsData.success) {
         setSafetyAlerts(alertsData.alerts?.slice(-10) || [])
       }
@@ -92,8 +115,9 @@ export default function ViolationDetection() {
         setStats({
           total: allViolations.length,
           speeding: statsData.stats?.speeding_violations || 0,
+          lane: laneViolations.length,
           dangerous: statsData.stats?.safety_alerts?.total || 0,
-          today: allViolations.filter(v => 
+          today: allViolations.filter(v =>
             new Date(v.timestamp).toDateString() === new Date().toDateString()
           ).length
         })
@@ -214,6 +238,11 @@ export default function ViolationDetection() {
           <div className="stat-label">Speeding Violations</div>
         </div>
         <div className="stat-card">
+          <div className="stat-icon">🛣️</div>
+          <div className="stat-number">{stats.lane}</div>
+          <div className="stat-label">Lane Violations</div>
+        </div>
+        <div className="stat-card">
           <div className="stat-icon">⚠️</div>
           <div className="stat-number">{stats.dangerous}</div>
           <div className="stat-label">Dangerous Driving</div>
@@ -237,6 +266,7 @@ export default function ViolationDetection() {
         <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="filter-select">
           <option value="all">All Violations</option>
           <option value="speeding">Speeding Only</option>
+          <option value="lane">Lane Violations Only</option>
           <option value="dangerous">Dangerous Driving</option>
         </select>
       </div>
@@ -286,21 +316,39 @@ export default function ViolationDetection() {
                   <th>Vehicle ID</th>
                   <th>License Plate</th>
                   <th>Type</th>
-                  <th>Speed</th>
                   <th>Details</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredViolations.slice(0, 50).map((v, idx) => (
                   <tr key={idx} className="violation-row">
                     <td>{formatDate(v.timestamp)} {formatTime(v.timestamp)}</td>
-                    <td>#{v.track_id}</td>
-                    <td className="plate-number">{v.plate || 'Unknown'}</td>
+                    <td>#{v.track_id || v.vehicle_id}</td>
+                    <td className="plate-number">{v.plate || v.plate_number || 'Unknown'}</td>
                     <td>
-                      <span className="type-badge speeding">Speeding</span>
+                      {v.type === 'speeding' ? (
+                        <span className="type-badge speeding">🚗 Speeding</span>
+                      ) : v.type === 'lane' ? (
+                        <span className="type-badge lane">🛣️ Lane Violation</span>
+                      ) : (
+                        <span className="type-badge dangerous">⚠️ Dangerous</span>
+                      )}
                     </td>
-                    <td className="speed-value">{v.speed?.toFixed(1)} km/h</td>
-                    <td>+{(v.speed - v.speed_limit).toFixed(1)} km/h over limit</td>
+                    <td>
+                      {v.type === 'speeding' ? (
+                        `${v.speed?.toFixed(1)} km/h (+${(v.speed - v.speed_limit).toFixed(1)} over limit)`
+                      ) : v.type === 'lane' ? (
+                        v.violation_type?.replace(/_/g, ' ').toUpperCase() || 'Lane Violation'
+                      ) : (
+                        v.description || 'Dangerous driving detected'
+                      )}
+                    </td>
+                    <td>
+                      <span className={`status-badge ${v.severity || 'medium'}`}>
+                        {v.severity === 'high' ? '🔴 High' : v.severity === 'low' ? '🟡 Low' : '🟠 Medium'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

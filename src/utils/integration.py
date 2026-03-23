@@ -108,8 +108,8 @@ def match_plate_to_vehicle(
 
 class VehicleDataIntegrator:
     """
-    Integrates vehicle tracking data with ANPR results.
-    Maintains a shared structure of per-vehicle information.
+    Integrates vehicle tracking data with ANPR results and violation detection.
+    Maintains a shared structure of per-vehicle information including speed and lane violations.
     """
     
     def __init__(self, speed_limit: float = 60.0):
@@ -121,6 +121,9 @@ class VehicleDataIntegrator:
         """
         self.vehicle_data: Dict[int, Dict] = {}
         self.speed_limit = speed_limit
+        self.speed_violations = []
+        self.lane_violations = []
+        self.all_violations = []
     
     def update_vehicle_tracking(self, track_id: int, bbox: Tuple[int, int, int, int],
                                speed: Optional[float] = None):
@@ -139,15 +142,50 @@ class VehicleDataIntegrator:
                 'speed': None,
                 'plate': None,
                 'plate_confidence': 0,
-                'violation': False
+                'speed_violation': False,
+                'lane_violations': [],
+                'total_violations': 0
             }
         
         self.vehicle_data[track_id]['bbox'] = bbox
         
         if speed is not None:
             self.vehicle_data[track_id]['speed'] = speed
-            self.vehicle_data[track_id]['violation'] = speed > self.speed_limit
+            self.vehicle_data[track_id]['speed_violation'] = speed > self.speed_limit
     
+    def add_violation(self, track_id: int, violation: Dict):
+        """
+        Add a violation (speed or lane) to a vehicle's record.
+        
+        Args:
+            track_id: Vehicle track ID
+            violation: Violation dictionary with type, severity, etc.
+        """
+        if track_id not in self.vehicle_data:
+            self.vehicle_data[track_id] = {
+                'track_id': track_id,
+                'bbox': (0, 0, 0, 0),
+                'speed': None,
+                'plate': None,
+                'plate_confidence': 0,
+                'speed_violation': False,
+                'lane_violations': [],
+                'total_violations': 0
+            }
+        
+        violation_type = violation.get('type')
+        
+        if violation_type in ['ILLEGAL_LANE_CHANGE', 'EXCESSIVE_LANE_CHANGES', 'LANE_CROSSING']:
+            self.vehicle_data[track_id]['lane_violations'].append(violation)
+            self.lane_violations.append(violation)
+        elif violation_type in ['SPEEDING', 'AGGRESSIVE_ACCELERATION', 'HARD_BRAKING']:
+            if 'speed_violations' not in self.vehicle_data[track_id]:
+                self.vehicle_data[track_id]['speed_violations'] = []
+            self.vehicle_data[track_id]['speed_violations'].append(violation)
+            self.speed_violations.append(violation)
+        
+        self.vehicle_data[track_id]['total_violations'] += 1
+        self.all_violations.append(violation)
     def update_vehicle_plate(self, track_id: int, plate_text: str, confidence: float = 1.0):
         """
         Update vehicle plate information.
@@ -221,12 +259,25 @@ class VehicleDataIntegrator:
     
     def get_violations(self) -> List[Dict]:
         """
-        Get all vehicles with violations (speeding).
+        Get all vehicles with violations (speed or lane).
         
         Returns:
             List of vehicle data dictionaries with violations
         """
-        return [data for data in self.vehicle_data.values() if data['violation']]
+        return [data for data in self.vehicle_data.values() 
+                if data.get('speed_violation') or data.get('lane_violations')]
+    
+    def get_speed_violations(self) -> List[Dict]:
+        """Get list of all speed violations detected."""
+        return self.speed_violations
+    
+    def get_lane_violations(self) -> List[Dict]:
+        """Get list of all lane violations detected."""
+        return self.lane_violations
+    
+    def get_all_violations(self) -> List[Dict]:
+        """Get list of all violations (speed and lane)."""
+        return self.all_violations
     
     def clean_old_vehicles(self, active_track_ids: List[int]):
         """

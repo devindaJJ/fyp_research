@@ -394,7 +394,7 @@ def process_video_in_background():
                 if plates_data and isinstance(plates_data, list):
                     integrator.link_plates_to_vehicles(plates_data)
                 
-                # Safety detection
+                # Safety detection (includes lane detection when enabled)
                 if current_tracks and isinstance(current_tracks, dict):
                     for track_id, track_data in current_tracks.items():
                         speed = track_data.get('speed')
@@ -403,8 +403,21 @@ def process_video_in_background():
                         if speed is not None and bbox is not None:
                             safety_detector.update_vehicle_state(track_id, bbox, speed)
                     
-                alerts = safety_detector.process_frame(current_tracks)
-                print(f"[INFO] Processed {frame_count} frames, {len(integrator.get_violations())} violations")
+                # Process frame with lane detection enabled
+                frame_alerts = safety_detector.process_frame(current_tracks, frame=frame)
+                
+                # Record violations by track_id
+                if frame_alerts:
+                    for alert in frame_alerts:
+                        track_id = alert.get('track_id')
+                        if track_id and track_id in current_tracks:
+                            integrator.add_violation(track_id, alert)
+                
+                speed_viols = len(integrator.get_speed_violations())
+                lane_viols = len(integrator.get_lane_violations())
+                
+                if frame_count % 30 == 0:  # Log every 30 frames
+                    print(f"[INFO] Frame {frame_count}: Speed violations: {speed_viols}, Lane violations: {lane_viols}")
                 
                 # Process every 2nd frame to speed up
                 if frame_count % 2 == 0:
@@ -746,6 +759,185 @@ def get_safety_alerts():
         }), 500
 
 
+# --- Lane Violation Detection Endpoints ---
+
+@app.route('/api/violations/lane', methods=['GET'])
+def get_lane_violations():
+    """Get all detected lane violations"""
+    if not current_session['integrator']:
+        # Return sample data for development/testing when no active session
+        sample_violations = [
+            {
+                'type': 'ILLEGAL_LANE_CHANGE',
+                'track_id': 1,
+                'severity': 'medium',
+                'description': 'Vehicle changed lanes without signaling',
+                'timestamp': datetime.now().isoformat()
+            },
+            {
+                'type': 'LANE_CROSSING',
+                'track_id': 2,
+                'severity': 'high',
+                'description': 'Vehicle crossed multiple lane markings',
+                'timestamp': datetime.now().isoformat()
+            },
+            {
+                'type': 'EXCESSIVE_LANE_CHANGES',
+                'track_id': 3,
+                'severity': 'low',
+                'description': 'Multiple lane changes in short time period',
+                'timestamp': datetime.now().isoformat()
+            }
+        ]
+        return jsonify({
+            "success": True,
+            "violations": sample_violations,
+            "total_count": len(sample_violations),
+            "note": "Sample data - no active detection session"
+        })
+    
+    try:
+        violations = current_session['integrator'].get_lane_violations()
+        
+        violation_list = []
+        for v in violations:
+            violation_list.append({
+                'type': v.get('type'),
+                'track_id': v.get('track_id'),
+                'severity': v.get('severity'),
+                'description': v.get('description'),
+                'timestamp': v.get('timestamp').isoformat() if hasattr(v.get('timestamp'), 'isoformat') else str(v.get('timestamp'))
+            })
+        
+        return jsonify({
+            "success": True,
+            "violations": violation_list,
+            "total_count": len(violation_list)
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/violations/summary', methods=['GET'])
+def get_violation_summary():
+    """Get summary of all violations (speed and lane)"""
+    if not current_session['integrator']:
+        # Return sample data for development/testing when no active session
+        return jsonify({
+            "success": True,
+            "summary": {
+                "total_violations": 8,
+                "speed_violations": 2,
+                "lane_violations": 6,
+                "vehicles_with_violations": 5
+            },
+            "violation_breakdown": {
+                "speed": [
+                    {"type": "SPEEDING", "count": 2}
+                ],
+                "lane": [
+                    {"type": "ILLEGAL_LANE_CHANGE", "count": 3},
+                    {"type": "LANE_CROSSING", "count": 2},
+                    {"type": "EXCESSIVE_LANE_CHANGES", "count": 1}
+                ]
+            },
+            "note": "Sample data - no active detection session"
+        })
+    
+    try:
+        integrator = current_session['integrator']
+        speed_viols = integrator.get_speed_violations()
+        lane_viols = integrator.get_lane_violations()
+        all_viols = integrator.get_all_violations()
+        
+        # Get violation types for speed violations
+        speed_types = {}
+        for v in speed_viols:
+            vtype = v.get('type', 'UNKNOWN')
+            speed_types[vtype] = speed_types.get(vtype, 0) + 1
+        
+        # Get violation types for lane violations
+        lane_types = {}
+        for v in lane_viols:
+            vtype = v.get('type', 'UNKNOWN')
+            lane_types[vtype] = lane_types.get(vtype, 0) + 1
+        
+        return jsonify({
+            "success": True,
+            "summary": {
+                "total_violations": len(all_viols),
+                "speed_violations": len(speed_viols),
+                "lane_violations": len(lane_viols),
+                "vehicles_with_violations": len(integrator.get_violations())
+            },
+            "violation_breakdown": {
+                "speed": [
+                    {"type": vtype, "count": count}
+                    for vtype, count in speed_types.items()
+                ],
+                "lane": [
+                    {"type": vtype, "count": count}
+                    for vtype, count in lane_types.items()
+                ]
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/violations/vehicle/<int:track_id>', methods=['GET'])
+def get_vehicle_violations(track_id):
+    """Get violations for a specific vehicle (track_id)"""
+    if not current_session['integrator']:
+        return jsonify({
+            "success": False,
+            "error": "No active detection session"
+        }), 400
+    
+    try:
+        integrator = current_session['integrator']
+        vehicle = integrator.get_vehicle_data(track_id)
+        
+        if not vehicle:
+            return jsonify({
+                "success": False,
+                "error": f"Vehicle with track_id {track_id} not found"
+            }), 404
+        
+        lane_violations = vehicle.get('lane_violations', [])
+        
+        return jsonify({
+            "success": True,
+            "vehicle": {
+                'track_id': vehicle.get('track_id'),
+                'plate': vehicle.get('plate'),
+                'speed': vehicle.get('speed'),
+                'speed_violation': vehicle.get('speed_violation'),
+                'total_violations': vehicle.get('total_violations'),
+                'lane_violations': [
+                    {
+                        'type': v.get('type'),
+                        'severity': v.get('severity'),
+                        'description': v.get('description'),
+                        'timestamp': v.get('timestamp').isoformat() if hasattr(v.get('timestamp'), 'isoformat') else str(v.get('timestamp'))
+                    }
+                    for v in lane_violations
+                ]
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @app.route('/api/detection/start', methods=['POST'])
 def start_detection():
     """Start a new detection session"""
@@ -795,8 +987,8 @@ def start_detection():
             print("[INFO] Creating VehicleDataIntegrator...")
             current_session['integrator'] = VehicleDataIntegrator(speed_limit=60)
             
-            print("[INFO] Creating SafetyEventDetector...")
-            current_session['safety_detector'] = SafetyEventDetector()
+            print("[INFO] Creating SafetyEventDetector with lane detection...")
+            current_session['safety_detector'] = SafetyEventDetector(enable_lane_detection=True)
             
             print(f"[INFO] Creating VehicleSpeedDetector with video: {video_path}")
             # Initialize speed detector in headless mode (no GUI windows)
@@ -884,12 +1076,15 @@ def get_detection_stats():
         vehicles = current_session['integrator'].get_all_vehicles()
         violations = current_session['integrator'].get_violations()
         safety_detector = current_session['safety_detector']
+        integrator = current_session['integrator']
         
         stats = {
             'total_vehicles_tracked': len(vehicles),
             'vehicles_with_speed': sum(1 for v in vehicles.values() if v['speed'] is not None),
             'vehicles_with_plate': sum(1 for v in vehicles.values() if v['plate'] is not None),
-            'speeding_violations': len(violations),
+            'speeding_violations': len(integrator.get_speed_violations()),
+            'lane_violations': len(integrator.get_lane_violations()),
+            'total_violations': len(integrator.get_all_violations()),
             'safety_alerts': {
                 'total': len(safety_detector.alerts),
                 'collisions': len(safety_detector.collisions),

@@ -26,8 +26,21 @@ class NumberPlateDetector:
             confidence_threshold: Minimum confidence for plate detection (default: 0.25)
             image_size: Image size for YOLO inference (default: 640)
         """
-        self.model = YOLO(model_path)
-        self.reader = easyocr.Reader(languages or ['en'])
+        # Attempt to load YOLO model; if it fails, disable plate detection
+        try:
+            self.model = YOLO(model_path)
+        except Exception as e:
+            # log error and fallback to no-detection mode
+            print(f"[WARNING] NumberPlateDetector could not load model '{model_path}': {e}")
+            self.model = None
+
+        # initialize OCR reader even if model failed; OCR is cheap
+        try:
+            self.reader = easyocr.Reader(languages or ['en'])
+        except Exception as e:
+            print(f"[WARNING] EasyOCR reader initialization failed: {e}")
+            self.reader = None
+
         self.preprocessor = PlatePreprocessor()
         self.confidence_threshold = confidence_threshold
         self.image_size = image_size
@@ -42,6 +55,10 @@ class NumberPlateDetector:
         Returns:
             List of bounding boxes [(x1, y1, x2, y2), ...]
         """
+        if self.model is None:
+            # model not available, skip detection
+            return []
+
         results = self.model(image, imgsz=self.image_size, conf=self.confidence_threshold)
         
         plates = []
@@ -66,11 +83,13 @@ class NumberPlateDetector:
         # Preprocess image for better OCR
         preprocessed = self.preprocessor.enhance_for_ocr(plate_img)
         
-        # Perform OCR
-        ocr_result = self.reader.readtext(preprocessed, detail=0)
-        
-        # Clean the text
-        text = clean_plate_text(ocr_result)
+        # Perform OCR (if reader available)
+        if self.reader:
+            ocr_result = self.reader.readtext(preprocessed, detail=0)
+            # Clean the text
+            text = clean_plate_text(ocr_result)
+        else:
+            text = None
         
         # Validate format if required
         if validate and text and not validate_sri_lankan_plate(text):
