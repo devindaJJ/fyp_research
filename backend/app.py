@@ -6,7 +6,6 @@ import threading
 import time
 import logging
 import joblib
-import gspread
 import traceback
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -17,6 +16,8 @@ from pathlib import Path
 import smtplib
 from email.message import EmailMessage
 import logging
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1167,6 +1168,7 @@ def send_accident_alert(accident):
             f"Location: {accident['location']}\n"
             f"Timestamp: {accident['timestamp']}\n"
             f"Distance: {accident['distance']}\n"
+            f"Distance: {accident['distance']}\n"
             f"Impact Detected: {accident['impact_detected']}\n"
             f"Total Impacts: {accident['total_impacts']}"
         )
@@ -1187,3 +1189,5 @@ if __name__ == '__main__':
     logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
     logging.info(f"Google Sheets connected: {worksheet is not None}")
     app.run(debug=True, host='0.0.0.0', port=8000)
+
+    
