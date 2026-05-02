@@ -1,0 +1,30 @@
+.header {
+    background-color: #161e54;
+    /* Explicit fallback or match primary-blue */
+    color: white;
+    padding: 2.5rem 2rem;
+    text-align: center;
+}
+
+.header-content h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    font-style: italic;
+    letter-spacing: 0.5px;
+}
+
+.header-content {
+    max-width: 1440px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: center;
+    /* Centered layout for simple header */
+    align-items: center;
+}
+
+.header-content p {
+    font-size: 0.95rem;
+    opacity: 0.9;
+    font-weight: 300;
+    font-style: italic;
+}

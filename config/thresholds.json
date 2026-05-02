@@ -1,0 +1,41 @@
+{
+  "traffic_levels": {
+    "light": {
+      "min_delay": 0,
+      "max_delay": 5,
+      "emoji": "🟢",
+      "recommendation": "Continue on current route"
+    },
+    "moderate": {
+      "min_delay": 6,
+      "max_delay": 15,
+      "emoji": "🟡",
+      "recommendation": "Consider alternative routes"
+    },
+    "heavy": {
+      "min_delay": 16,
+      "max_delay": 30,
+      "emoji": "🟠",
+      "recommendation": "Take alternative route"
+    },
+    "severe": {
+      "min_delay": 31,
+      "max_delay": 999,
+      "emoji": "🔴",
+      "recommendation": "Delay travel or take significant detour"
+    }
+  },
+  
+  "rerouting": {
+    "suggest_alternatives_above_delay": 10,
+    "minimum_time_saving": 5,
+    "maximum_detour_percentage": 30,
+    "confidence_threshold": 0.7
+  },
+  
+  "monitoring": {
+    "default_interval_minutes": 10,
+    "significant_change_threshold": 5,
+    "max_monitoring_hours": 24
+  }
+}
