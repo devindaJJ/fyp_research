@@ -517,6 +517,64 @@ def ingest_parking():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ===== PARKING UPDATE ENDPOINT FOR ESP32 SENSORS =====
+# Receives parking data directly from ultrasonic sensors (HC-SR04)
+# Maps ESP32 format to backend parking schema
+@app.route('/api/parking/update', methods=['POST'])
+def parking_update():
+    """
+    Endpoint for ESP32 parking sensors to POST real-time parking data.
+    
+    Expected ESP32 JSON format:
+    {
+        "slot_id": "SLOT_001",
+        "zone": "Zone_A",
+        "status": "OCCUPIED" or "AVAILABLE",
+        "distance_cm": 45.5,
+        "latitude": 7.208430,
+        "longitude": 79.864670
+    }
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"success": False, "error": "No JSON payload provided"}), 400
+        
+        # Map ESP32 format to backend parking format
+        record = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'Device_ID': payload.get('slot_id', 'UNKNOWN'),
+            'Location': payload.get('location', f"{payload.get('zone', 'Zone_Unknown')}_{payload.get('slot_id', 'UNKNOWN')}"),
+            'Distance_cm': payload.get('distance_cm', ''),
+            'Vehicle_Detected': 'YES' if payload.get('status', '').upper() == 'OCCUPIED' else 'NO',
+            'Status': payload.get('status', '').upper() or 'VACANT',
+            'Latitude': payload.get('latitude', ''),
+            'Longitude': payload.get('longitude', ''),
+            'Zone': payload.get('zone', ''),
+            'RSSI_dBm': payload.get('rssi', ''),
+            'parking_duration': payload.get('parking_duration', ''),
+            'slot_id': payload.get('slot_id', '')
+        }
+        
+        # Store in Google Sheets
+        if sheets_handler:
+            sheets_handler.append_parking_record(record)
+            logging.info(f"✓ Parking data received from {record['Device_ID']}: {record['Status']} at distance {record['Distance_cm']}cm")
+            return jsonify({
+                "success": True,
+                "message": "Parking data received",
+                "slot_id": payload.get('slot_id'),
+                "status": record['Status'],
+                "timestamp": record['timestamp']
+            }), 201
+        else:
+            return jsonify({"success": False, "error": "Google Sheets handler not available"}), 500
+            
+    except Exception as e:
+        logging.error(f"✗ Error in parking_update: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/detection/violations', methods=['GET'])
 def get_detection_violations():
     """Get vehicles with violations"""

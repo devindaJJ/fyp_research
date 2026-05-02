@@ -91,16 +91,53 @@ class GoogleSheetsHandler:
                 processed_data.append({
                     'timestamp': timestamp,
                     'distance': distance_val,
-                    'status': status,
+                    'status': status.upper() if status else 'VACANT',
                     'location': record.get('Location') or record.get('location') or 'Unknown',
-                    'device_id': record.get('Device_ID') or record.get('DeviceId') or record.get('device') or None,
+                    'device_id': record.get('Device_ID') or record.get('DeviceId') or record.get('device') or record.get('slot_id') or None,
+                    'parking_spot_id': record.get('Device_ID') or record.get('DeviceId') or record.get('device') or record.get('slot_id') or None,
                     'rssi': record.get('RSSI_dBm') or record.get('rssi') or None,
                     'latitude': record.get('Latitude') or record.get('lat') or None,
                     'longitude': record.get('Longitude') or record.get('lon') or None,
+                    'zone': record.get('Zone') or record.get('zone') or 'Unknown',
+                    'parking_duration': record.get('Parking_Duration_s') or record.get('parking_duration') or None,
+                    'sensor_calibrated': True,  # Default to calibrated unless specified otherwise
                     'raw': record
                 })
 
-            return processed_data[-50:]
+            # Return ONLY the most recent record per device (not all historical records)
+            # This prevents showing 50 copies of the same parking slot
+            latest_per_device = {}
+            for record in processed_data:
+                device_id = record.get('device_id') or 'UNKNOWN'
+                # Keep only if this is the first occurrence or timestamp is newer
+                if device_id not in latest_per_device:
+                    latest_per_device[device_id] = record
+                else:
+                    try:
+                        # Parse timestamps to compare them
+                        current_ts = pd.to_datetime(record['timestamp'])
+                        existing_ts = pd.to_datetime(latest_per_device[device_id]['timestamp'])
+                        if current_ts > existing_ts:
+                            latest_per_device[device_id] = record
+                    except Exception:
+                        # If timestamp parsing fails, keep the existing one
+                        pass
+            
+            # Filter: Only show records from the last 24 hours (remove old test data)
+            cutoff_time = datetime.now() - timedelta(hours=24)
+            recent_data = []
+            for record in latest_per_device.values():
+                try:
+                    record_time = pd.to_datetime(record['timestamp'])
+                    if record_time >= cutoff_time:
+                        recent_data.append(record)
+                except Exception:
+                    # If timestamp parsing fails, include it anyway
+                    recent_data.append(record)
+            
+            # Return sorted by timestamp (most recent first)
+            result = sorted(recent_data, key=lambda x: x['timestamp'], reverse=True)
+            return result
         
         except Exception as e:
             print(f"Error reading Google Sheets: {e}")
