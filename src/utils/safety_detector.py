@@ -1,24 +1,44 @@
 """
 Real-time safety and incident detection system.
 Detects dangerous driving behaviors, collisions, and near-miss incidents.
+Includes integrated lane violation detection.
 """
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import math
+import cv2
+import numpy as np
 
 
 class SafetyEventDetector:
     """
     Detect dangerous driving behaviors and incidents in real-time.
+    Integrated with lane violation detection.
     """
     
-    def __init__(self):
-        """Initialize safety detector."""
+    def __init__(self, enable_lane_detection: bool = True):
+        """
+        Initialize safety detector.
+        
+        Args:
+            enable_lane_detection: Whether to enable lane violation detection
+        """
         self.vehicle_history = {}  
         self.alerts = []  
         self.collisions = []  
         self.near_misses = []  
-        self.behavioral_alerts = []  
+        self.behavioral_alerts = []
+        self.lane_violations = []
+        
+        # Lane detection components
+        self.enable_lane_detection = enable_lane_detection
+        if enable_lane_detection:
+            from ..core.lane_analyzer import LaneDetector, LaneViolationDetector
+            self.lane_detector = LaneDetector()
+            self.lane_violation_detector = LaneViolationDetector()
+        else:
+            self.lane_detector = None
+            self.lane_violation_detector = None
     
     def update_vehicle_state(self, track_id: int, bbox: Tuple, speed: Optional[float]):
         """
@@ -168,6 +188,68 @@ class SafetyEventDetector:
         
         return None
     
+    def process_lane_detection(self, frame: np.ndarray) -> List[Dict]:
+        """
+        Process frame for lane detection and violations.
+        
+        Args:
+            frame: Input frame
+            
+        Returns:
+            List of lane violations detected
+        """
+        if not self.enable_lane_detection or self.lane_detector is None:
+            return []
+        
+        lane_alerts = []
+        
+        try:
+            # Detect lane markings
+            lines, _ = self.lane_detector.detect_lane_markings(frame)
+            lanes = self.lane_detector.extract_lanes_from_lines(lines, frame)
+            
+            # Update detected lanes in violation detector
+            self.lane_violation_detector.update_lanes(lanes)
+            
+        except Exception as e:
+            print(f"[WARNING] Lane detection failed: {e}")
+        
+        return lane_alerts
+    
+    def detect_lane_violation(self, track_id: int, bbox: Tuple[int, int, int, int],
+                             speed: Optional[float] = None) -> Optional[Dict]:
+        """
+        Detect lane violations for a specific vehicle.
+        
+        Args:
+            track_id: Vehicle track ID
+            bbox: Vehicle bounding box (x1, y1, x2, y2)
+            speed: Vehicle speed in km/h (optional)
+            
+        Returns:
+            Lane violation dictionary if detected, None otherwise
+        """
+        if not self.enable_lane_detection or self.lane_violation_detector is None:
+            return None
+        
+        # Check for improper lane change
+        lane_change_violation = self.lane_violation_detector.update_vehicle_lane(
+            track_id, bbox, speed
+        )
+        
+        if lane_change_violation:
+            self.lane_violations.append(lane_change_violation)
+            return lane_change_violation
+        
+        # Check for lane crossing
+        crossing_violation = self.lane_violation_detector.detect_lane_crossing(bbox, track_id)
+        
+        if crossing_violation:
+            self.lane_violations.append(crossing_violation)
+            return crossing_violation
+        
+        return None
+    
     def detect_collision(self, track_id1: int, vehicle1: Dict, track_id2: int, vehicle2: Dict) -> Optional[Dict]:
         """
         Detect collision between two vehicles.
@@ -307,17 +389,23 @@ class SafetyEventDetector:
         
         return distance
     
-    def process_frame(self, vehicles: Dict) -> List[Dict]:
+    def process_frame(self, vehicles: Dict, frame: Optional[np.ndarray] = None) -> List[Dict]:
         """
         Process all vehicles in current frame and detect alerts.
         
         Args:
             vehicles: Dictionary of {track_id: vehicle_data}
+            frame: Optional frame for lane detection
             
         Returns:
             List of alerts detected in this frame
         """
         frame_alerts = []
+        
+        # Process lane detection if frame is provided
+        if frame is not None:
+            lane_detection_alerts = self.process_lane_detection(frame)
+            frame_alerts.extend(lane_detection_alerts)
         
         # Update states and check individual behaviors
         for track_id, vehicle in vehicles.items():
@@ -344,6 +432,17 @@ class SafetyEventDetector:
             if weave_alert:
                 frame_alerts.append(weave_alert)
                 self.behavioral_alerts.append(weave_alert)
+            
+            # Check for lane violations
+            lane_alert = self.detect_lane_violation(track_id, bbox, speed)
+            if lane_alert:
+                frame_alerts.append(lane_alert)
+                self.lane_violations.append(lane_alert)
+        
+        # Cleanup old vehicles from lane tracking
+        if self.lane_violation_detector:
+            active_ids = list(vehicles.keys())
+            self.lane_violation_detector.cleanup_old_vehicles(active_ids)
         
         # Check interactions between vehicles
         vehicle_list = list(vehicles.items())
