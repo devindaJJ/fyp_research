@@ -1,295 +1,227 @@
+// ============================================================
+//  SMART PARKING SYSTEM — ESP32 Sensor Code
+//  Components: ESP32 + HC-SR04 Ultrasonic Sensor
+//  Connection: Phone Hotspot → HTTP POST to Flask backend
+// ============================================================
+//
+//  WIRING GUIDE (copy this before you start):
+//  HC-SR04 VCC  → ESP32 5V (or VIN)
+//  HC-SR04 GND  → ESP32 GND
+//  HC-SR04 TRIG → ESP32 GPIO 5
+//  HC-SR04 ECHO → ESP32 GPIO 18
+//
+// ============================================================
+
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <time.h>
 
-const char* ssid = "SLT-4G_5938F0";
-const char* password = "A668CBFD";
-const char* scriptURL = "https://script.google.com/macros/s/AKfycbwljWC1x9h_eLQYodU35iE4RULRjtLuExkrQO6VjBA3lw8OiTs-P--FhSWI1Z_yfz87/exec";
+// ------------------------------------------------------------
+// STEP 1 — CHANGE THESE TO YOUR PHONE HOTSPOT DETAILS
+// ------------------------------------------------------------
+const char* WIFI_SSID     = "";       // your phone hotspot name
+const char* WIFI_PASSWORD = "";   // your phone hotspot password
 
-// Sensor Pins
-const int trigPin = 13;    
-const int echoPin = 12;   
-const int hallPin = 27;   
+// ------------------------------------------------------------
+// STEP 2 — CHANGE THIS TO YOUR BACKEND SERVER ADDRESS
+// If your Flask backend is running on a laptop connected to
+// the same hotspot, find that laptop's IP from cmd > ipconfig
+// Example: "http://192.168.43.101:5000/api/parking/update"
+// ------------------------------------------------------------
+const char* BACKEND_URL = "http://192.168.8.189:8000/api/parking/update";
 
-// Parking Configuration
-const float PARKING_THRESHOLD = 30.0;   
-const int HALL_THRESHOLD = 2000;        
-const long PARKING_TIMEOUT = 120000;    
+// ------------------------------------------------------------
+// STEP 3 — SET YOUR SLOT DETAILS
+// Hardcode the GPS coordinates of your parking slot here.
+// You can get the exact lat/lng by dropping a pin in Google Maps.
+// ------------------------------------------------------------
+const char* SLOT_ID       = "SLOT_01";
+const char* ZONE          = "Driveway";
+const float SLOT_LAT      = 7.208430;    // replace with your actual latitude
+const float SLOT_LNG      = 79.864670;   // replace with your actual longitude
 
-// Upload Settings
-const long UPLOAD_INTERVAL = 10000;    
-const long SENSOR_READ_INTERVAL = 2000; 
+// ------------------------------------------------------------
+// SENSOR PIN CONFIGURATION
+// ------------------------------------------------------------
+const int TRIG_PIN = 5;
+const int ECHO_PIN = 18;
 
-// Location Tag (set your location)
-const String LOCATION = "Colombo_Parking";
+// ------------------------------------------------------------
+// DETECTION SETTINGS — tweak these if needed
+// ------------------------------------------------------------
+const float OCCUPIED_THRESHOLD_CM  = 50.0;  // if distance < 50cm = something is there
+const int   VEHICLE_CONFIRM_SECS   = 15;    // must stay detected for 15 sec = real vehicle
+const int   READING_INTERVAL_MS    = 500;   // read sensor every 500 milliseconds
+const int   POST_INTERVAL_MS       = 5000;  // send data to server every 5 seconds
 
-unsigned long lastUploadTime = 0;
-unsigned long lastSensorReadTime = 0;
-unsigned long parkingStartTime = 0;
-bool isParkingOccupied = false;
-bool lastParkingState = false;
-float currentDistance = 0;
-int currentHallValue = 0;
-String vehicleDetected = "NO";
-long parkingDuration = 0;
+// ------------------------------------------------------------
+// INTERNAL STATE — do not change these
+// ------------------------------------------------------------
+String  currentStatus       = "AVAILABLE";
+String  lastSentStatus      = "";
+unsigned long detectedSince = 0;
+unsigned long lastPostTime  = 0;
+bool    objectDetected      = false;
 
+// ============================================================
+//  SETUP — runs once when ESP32 powers on
+// ============================================================
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n===== PARKING DETECTION SYSTEM =====");
-  
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
-  pinMode(hallPin, INPUT);
+  delay(500);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  Serial.println("=================================");
+  Serial.println("  Smart Parking System Starting ");
+  Serial.println("=================================");
+
   connectToWiFi();
-  configTime(0, 0, "pool.ntp.org");
-  
-  Serial.println("System initialized!");
-  Serial.println("================================");
-}
-void loop() {
-  unsigned long currentTime = millis();
-  
-  if (currentTime - lastSensorReadTime >= SENSOR_READ_INTERVAL) {
-    readSensors();
-    checkParkingStatus();
-    lastSensorReadTime = currentTime;
-  }
-  
-  if (currentTime - lastUploadTime >= UPLOAD_INTERVAL) {
-    uploadParkingData();
-    lastUploadTime = currentTime;
-  }
-  
-  delay(100);
 }
 
-// Connect to WiFi
+// ============================================================
+//  MAIN LOOP — runs continuously
+// ============================================================
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost. Reconnecting...");
+    connectToWiFi();
+  }
+
+  float distance = readDistance();
+
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // --------------------------------------------------------
+  // VEHICLE DETECTION LOGIC WITH TIME FILTER
+  // This makes sure we only count a REAL parked vehicle,
+  // not someone just walking past the sensor.
+  // --------------------------------------------------------
+  if (distance < OCCUPIED_THRESHOLD_CM && distance > 2.0) {
+    if (!objectDetected) {
+      objectDetected = true;
+      detectedSince  = millis();
+      Serial.println("Object detected — starting timer...");
+    } else {
+      unsigned long secondsDetected = (millis() - detectedSince) / 1000;
+
+      if (secondsDetected >= VEHICLE_CONFIRM_SECS) {
+        currentStatus = "OCCUPIED";
+        Serial.print("VEHICLE CONFIRMED — occupied for ");
+        Serial.print(secondsDetected);
+        Serial.println(" seconds");
+      } else {
+        Serial.print("Waiting to confirm... ");
+        Serial.print(secondsDetected);
+        Serial.print(" / ");
+        Serial.print(VEHICLE_CONFIRM_SECS);
+        Serial.println(" sec");
+      }
+    }
+  } else {
+    if (objectDetected) {
+      Serial.println("Object gone — slot now AVAILABLE");
+    }
+    objectDetected = false;
+    detectedSince  = 0;
+    currentStatus  = "AVAILABLE";
+  }
+
+  // --------------------------------------------------------
+  // SEND DATA TO BACKEND EVERY 5 SECONDS
+  // --------------------------------------------------------
+  unsigned long now = millis();
+  if (now - lastPostTime >= POST_INTERVAL_MS) {
+    lastPostTime = now;
+    sendToBackend(currentStatus, distance);
+  }
+
+  delay(READING_INTERVAL_MS);
+}
+
+// ============================================================
+//  FUNCTION: Read distance from HC-SR04 sensor (returns cm)
+// ============================================================
+float readDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout
+
+  if (duration == 0) {
+    return 999.0; // nothing in range
+  }
+
+  // d = (t * v) / 2  where v = 0.0343 cm/microsecond
+  float distance = (duration * 0.0343) / 2.0;
+  return distance;
+}
+
+// ============================================================
+//  FUNCTION: Connect to WiFi / phone hotspot
+// ============================================================
 void connectToWiFi() {
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
-  
-  WiFi.begin(ssid, password);
-  
+  Serial.print("Connecting to hotspot: ");
+  Serial.println(WIFI_SSID);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
     attempts++;
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected!");
-    Serial.print("IP Address: ");
+    Serial.println("\nConnected!");
+    Serial.print("ESP32 IP: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println("\nWiFi Connection Failed!");
+    Serial.println("\nFailed to connect. Will retry in loop.");
   }
 }
 
-// Read ultrasonic sensor distance
-float readUltrasonicDistance() {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  
-  long duration = pulseIn(echoPin, HIGH, 30000); 
-  
-  if (duration == 0) {
-    return -1; 
-  }
-  
-  float distance = duration * 0.0343 / 2; 
-  
-  if (distance < 2 || distance > 400) {
-    return -1; 
-  }
-  
-  return distance;
-}
-
-int readHallSensor() {
-  int sum = 0;
-  for (int i = 0; i < 5; i++) {
-    sum += analogRead(hallPin);
-    delay(2);
-  }
-  return sum / 5;
-}
-
-void readSensors() {
-  currentDistance = readUltrasonicDistance();
-  currentHallValue = readHallSensor();
-  
-  Serial.println("===== Sensor Readings =====");
-  Serial.print("Distance: ");
-  if (currentDistance < 0) {
-    Serial.println("INVALID");
-  } else {
-    Serial.print(currentDistance);
-    Serial.println(" cm");
-  }
-  
-  Serial.print("Hall Value: ");
-  Serial.println(currentHallValue);
-  Serial.println("==========================");
-}
-
-void checkParkingStatus() {
-  bool ultrasonicOccupied = (currentDistance > 0 && currentDistance < PARKING_THRESHOLD);
-  bool hallOccupied = (currentHallValue > HALL_THRESHOLD);
-  
-  isParkingOccupied = (ultrasonicOccupied && hallOccupied);
-  vehicleDetected = isParkingOccupied ? "YES" : "NO";
-  
-  unsigned long currentTime = millis();
-  
-  if (isParkingOccupied && !lastParkingState) {
-    parkingStartTime = currentTime;
-    Serial.println("VEHICLE DETECTED - Parking started");
-  } 
-  else if (!isParkingOccupied && lastParkingState) {
-    parkingDuration = (currentTime - parkingStartTime) / 1000;
-    Serial.print("VEHICLE LEFT - Parking duration: ");
-    Serial.print(parkingDuration);
-    Serial.println(" seconds");
-    
-    if (parkingDuration > (PARKING_TIMEOUT / 1000)) {
-      Serial.println(" ILLEGAL PARKING DETECTED!");
-    }
-  }
-  else if (isParkingOccupied) {
-    parkingDuration = (currentTime - parkingStartTime) / 1000;
-  }
-  
-  lastParkingState = isParkingOccupied;
-  
-  Serial.print("Status: ");
-  Serial.println(isParkingOccupied ? "OCCUPIED" : "VACANT");
-  if (isParkingOccupied) {
-    Serial.print("Duration: ");
-    Serial.print(parkingDuration);
-    Serial.println(" seconds");
-  }
-  Serial.println();
-}
-
-String getTimestamp() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    return String(millis());
-  }
-  
-  char timeString[20];
-  strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
-  return String(timeString);
-}
-
-void uploadParkingData() {
+// ============================================================
+//  FUNCTION: Send parking status to Flask backend via HTTP POST
+// ============================================================
+void sendToBackend(String status, float distance) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected! Reconnecting...");
-    connectToWiFi();
+    Serial.println("No WiFi — skipping POST");
     return;
   }
-  
+
   HTTPClient http;
-  
-  String url = String(scriptURL);
-  url += "?action=parking";
-  url += "&timestamp=" + getTimestamp();
-  url += "&distance=" + String(currentDistance, 1);
-  url += "&vehicle_detected=" + vehicleDetected;
-  url += "&parking_duration=" + String(parkingDuration);
-  url += "&location=" + LOCATION;
-  
-  Serial.println("===== Uploading Data =====");
-  Serial.print("URL: ");
-  Serial.println(url);
-  
-  http.begin(url);
-  http.setTimeout(10000);
-  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-  
+  http.begin(BACKEND_URL);
+  http.addHeader("Content-Type", "application/json");
 
-  int httpCode = http.GET();
-  
-  if (httpCode > 0) {
-    String response = http.getString();
-    Serial.print("Response Code: ");
-    Serial.println(httpCode);
-    Serial.print("Response: ");
-    Serial.println(response);
-    
-    if (response.indexOf("success") >= 0 || response.indexOf("logged") >= 0) {
-      Serial.println("Data uploaded successfully!");
-    } else {
-      Serial.println("Upload completed but check response");
-    }
+  // JSON payload includes slot info, status, distance, and GPS coords
+  String payload = "{";
+  payload += "\"slot_id\": \""   + String(SLOT_ID)       + "\", ";
+  payload += "\"zone\": \""      + String(ZONE)           + "\", ";
+  payload += "\"status\": \""    + status                 + "\", ";
+  payload += "\"distance_cm\": " + String(distance, 1)    + ", ";
+  payload += "\"latitude\": "    + String(SLOT_LAT, 6)    + ", ";
+  payload += "\"longitude\": "   + String(SLOT_LNG, 6);
+  payload += "}";
+
+  Serial.println("Sending → " + payload);
+
+  int responseCode = http.POST(payload);
+
+  if (responseCode > 0) {
+    Serial.print("Server response: ");
+    Serial.println(responseCode);
+    Serial.println(http.getString());
   } else {
-    Serial.print("Upload failed! Error: ");
-    Serial.println(http.errorToString(httpCode).c_str());
-    
-    if (httpCode == HTTPC_ERROR_CONNECTION_REFUSED || 
-        httpCode == HTTPC_ERROR_CONNECTION_LOST) {
-      WiFi.disconnect();
-      connectToWiFi();
-    }
+    Serial.print("POST failed. Error code: ");
+    Serial.println(responseCode);
   }
-  
+
   http.end();
-  Serial.println("==========================");
-  Serial.println();
-}
-
-void testSensors() {
-  Serial.println("\n===== SENSOR TEST =====");
-  
-  for (int i = 0; i < 5; i++) {
-    float dist = readUltrasonicDistance();
-    int hall = readHallSensor();
-    
-    Serial.print("Test ");
-    Serial.print(i + 1);
-    Serial.print(": Distance = ");
-    Serial.print(dist);
-    Serial.print(" cm, Hall = ");
-    Serial.println(hall);
-    
-    delay(1000);
-  }
-  
-  Serial.println("===== TEST COMPLETE =====");
-}
-
-// Get WiFi signal strength
-int getWiFiStrength() {
-  if (WiFi.status() != WL_CONNECTED) return 0;
-  return WiFi.RSSI();
-}
-
-// Print system status
-void printSystemStatus() {
-  Serial.println("\n===== SYSTEM STATUS =====");
-  Serial.print("WiFi: ");
-  Serial.println(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Signal: ");
-    Serial.print(getWiFiStrength());
-    Serial.println(" dBm");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-  }
-  
-  Serial.print("Parking Status: ");
-  Serial.println(isParkingOccupied ? "OCCUPIED" : "VACANT");
-  Serial.print("Vehicle Detected: ");
-  Serial.println(vehicleDetected);
-  Serial.print("Current Distance: ");
-  Serial.print(currentDistance);
-  Serial.println(" cm");
-  Serial.print("Hall Value: ");
-  Serial.println(currentHallValue);
-  Serial.println("==========================");
 }

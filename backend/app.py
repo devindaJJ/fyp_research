@@ -1,25 +1,25 @@
 import sys
 import os
 import json
+import csv
 import cv2
 import threading
 import time
 import logging
 import joblib
 import traceback
+import datetime
+import pandas as pd
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from google_sheets import GoogleSheetsHandler
 from traffic_routes import traffic_bp
 from datetime import datetime, timedelta
 from pathlib import Path
-import smtplib
-from email.message import EmailMessage
-import logging
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import queue   # ← NEW: for reliable email queue
-
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -649,6 +649,7 @@ def process_video_in_background():
                 if plates_data and isinstance(plates_data, list):
                     integrator.link_plates_to_vehicles(plates_data)
                 
+                # Safety detection
                 if current_tracks and isinstance(current_tracks, dict):
                     for track_id, track_data in current_tracks.items():
                         speed = track_data.get('speed')
@@ -656,8 +657,8 @@ def process_video_in_background():
                         
                         if speed is not None and bbox is not None:
                             safety_detector.update_vehicle_state(track_id, bbox, speed)
-                
-                safety_alerts = safety_detector.process_frame(current_tracks)
+                    
+                alerts = safety_detector.process_frame(current_tracks)
                 print(f"[INFO] Processed {frame_count} frames, {len(integrator.get_violations())} violations")
                 
                 if frame_count % 2 == 0:
@@ -665,7 +666,6 @@ def process_video_in_background():
                     
             except Exception as frame_error:
                 print(f"[ERROR] Frame {frame_count} processing failed: {frame_error}")
-                import traceback
                 traceback.print_exc()
                 continue
             if current_session['frame_count'] % 3 != 0:
@@ -723,7 +723,6 @@ def get_vehicles():
         })
     except Exception as e:
         logging.error(f"Error in get_accidents: {e}")
-        import traceback
         logging.error(traceback.format_exc())
         return jsonify({
             "success": False,
@@ -761,6 +760,64 @@ def ingest_parking():
 
         return jsonify({"success": True, "appended": appended}), 201
     except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ===== PARKING UPDATE ENDPOINT FOR ESP32 SENSORS =====
+# Receives parking data directly from ultrasonic sensors (HC-SR04)
+# Maps ESP32 format to backend parking schema
+@app.route('/api/parking/update', methods=['POST'])
+def parking_update():
+    """
+    Endpoint for ESP32 parking sensors to POST real-time parking data.
+    
+    Expected ESP32 JSON format:
+    {
+        "slot_id": "SLOT_001",
+        "zone": "Zone_A",
+        "status": "OCCUPIED" or "AVAILABLE",
+        "distance_cm": 45.5,
+        "latitude": 7.208430,
+        "longitude": 79.864670
+    }
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"success": False, "error": "No JSON payload provided"}), 400
+        
+        # Map ESP32 format to backend parking format
+        record = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'Device_ID': payload.get('slot_id', 'UNKNOWN'),
+            'Location': payload.get('location', f"{payload.get('zone', 'Zone_Unknown')}_{payload.get('slot_id', 'UNKNOWN')}"),
+            'Distance_cm': payload.get('distance_cm', ''),
+            'Vehicle_Detected': 'YES' if payload.get('status', '').upper() == 'OCCUPIED' else 'NO',
+            'Status': payload.get('status', '').upper() or 'VACANT',
+            'Latitude': payload.get('latitude', ''),
+            'Longitude': payload.get('longitude', ''),
+            'Zone': payload.get('zone', ''),
+            'RSSI_dBm': payload.get('rssi', ''),
+            'parking_duration': payload.get('parking_duration', ''),
+            'slot_id': payload.get('slot_id', '')
+        }
+        
+        # Store in Google Sheets
+        if sheets_handler:
+            sheets_handler.append_parking_record(record)
+            logging.info(f"✓ Parking data received from {record['Device_ID']}: {record['Status']} at distance {record['Distance_cm']}cm")
+            return jsonify({
+                "success": True,
+                "message": "Parking data received",
+                "slot_id": payload.get('slot_id'),
+                "status": record['Status'],
+                "timestamp": record['timestamp']
+            }), 201
+        else:
+            return jsonify({"success": False, "error": "Google Sheets handler not available"}), 500
+            
+    except Exception as e:
+        logging.error(f"✗ Error in parking_update: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -892,7 +949,6 @@ def get_accidents():
 
     except Exception as e:
         logging.error(f"Error in get_accidents: {e}")
-        import traceback
         logging.error(traceback.format_exc())
 
         return jsonify({
@@ -966,7 +1022,6 @@ def get_statistics():
         return jsonify({"success": True, "statistics": stats, "timestamp": now.isoformat()})
     except Exception as e:
         logging.error(f"Error in get_statistics: {e}")
-        import traceback
         logging.error(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -1007,6 +1062,185 @@ def get_safety_alerts():
             "alerts": alert_list,
             "total_count": len(alerts),
             "critical_count": len(current_session['safety_detector'].collisions)
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# --- Lane Violation Detection Endpoints ---
+
+@app.route('/api/violations/lane', methods=['GET'])
+def get_lane_violations():
+    """Get all detected lane violations"""
+    if not current_session['integrator']:
+        # Return sample data for development/testing when no active session
+        sample_violations = [
+            {
+                'type': 'ILLEGAL_LANE_CHANGE',
+                'track_id': 1,
+                'severity': 'medium',
+                'description': 'Vehicle changed lanes without signaling',
+                'timestamp': datetime.now().isoformat()
+            },
+            {
+                'type': 'LANE_CROSSING',
+                'track_id': 2,
+                'severity': 'high',
+                'description': 'Vehicle crossed multiple lane markings',
+                'timestamp': datetime.now().isoformat()
+            },
+            {
+                'type': 'EXCESSIVE_LANE_CHANGES',
+                'track_id': 3,
+                'severity': 'low',
+                'description': 'Multiple lane changes in short time period',
+                'timestamp': datetime.now().isoformat()
+            }
+        ]
+        return jsonify({
+            "success": True,
+            "violations": sample_violations,
+            "total_count": len(sample_violations),
+            "note": "Sample data - no active detection session"
+        })
+    
+    try:
+        violations = current_session['integrator'].get_lane_violations()
+        
+        violation_list = []
+        for v in violations:
+            violation_list.append({
+                'type': v.get('type'),
+                'track_id': v.get('track_id'),
+                'severity': v.get('severity'),
+                'description': v.get('description'),
+                'timestamp': v.get('timestamp').isoformat() if hasattr(v.get('timestamp'), 'isoformat') else str(v.get('timestamp'))
+            })
+        
+        return jsonify({
+            "success": True,
+            "violations": violation_list,
+            "total_count": len(violation_list)
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/violations/summary', methods=['GET'])
+def get_violation_summary():
+    """Get summary of all violations (speed and lane)"""
+    if not current_session['integrator']:
+        # Return sample data for development/testing when no active session
+        return jsonify({
+            "success": True,
+            "summary": {
+                "total_violations": 8,
+                "speed_violations": 2,
+                "lane_violations": 6,
+                "vehicles_with_violations": 5
+            },
+            "violation_breakdown": {
+                "speed": [
+                    {"type": "SPEEDING", "count": 2}
+                ],
+                "lane": [
+                    {"type": "ILLEGAL_LANE_CHANGE", "count": 3},
+                    {"type": "LANE_CROSSING", "count": 2},
+                    {"type": "EXCESSIVE_LANE_CHANGES", "count": 1}
+                ]
+            },
+            "note": "Sample data - no active detection session"
+        })
+    
+    try:
+        integrator = current_session['integrator']
+        speed_viols = integrator.get_speed_violations()
+        lane_viols = integrator.get_lane_violations()
+        all_viols = integrator.get_all_violations()
+        
+        # Get violation types for speed violations
+        speed_types = {}
+        for v in speed_viols:
+            vtype = v.get('type', 'UNKNOWN')
+            speed_types[vtype] = speed_types.get(vtype, 0) + 1
+        
+        # Get violation types for lane violations
+        lane_types = {}
+        for v in lane_viols:
+            vtype = v.get('type', 'UNKNOWN')
+            lane_types[vtype] = lane_types.get(vtype, 0) + 1
+        
+        return jsonify({
+            "success": True,
+            "summary": {
+                "total_violations": len(all_viols),
+                "speed_violations": len(speed_viols),
+                "lane_violations": len(lane_viols),
+                "vehicles_with_violations": len(integrator.get_violations())
+            },
+            "violation_breakdown": {
+                "speed": [
+                    {"type": vtype, "count": count}
+                    for vtype, count in speed_types.items()
+                ],
+                "lane": [
+                    {"type": vtype, "count": count}
+                    for vtype, count in lane_types.items()
+                ]
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/violations/vehicle/<int:track_id>', methods=['GET'])
+def get_vehicle_violations(track_id):
+    """Get violations for a specific vehicle (track_id)"""
+    if not current_session['integrator']:
+        return jsonify({
+            "success": False,
+            "error": "No active detection session"
+        }), 400
+    
+    try:
+        integrator = current_session['integrator']
+        vehicle = integrator.get_vehicle_data(track_id)
+        
+        if not vehicle:
+            return jsonify({
+                "success": False,
+                "error": f"Vehicle with track_id {track_id} not found"
+            }), 404
+        
+        lane_violations = vehicle.get('lane_violations', [])
+        
+        return jsonify({
+            "success": True,
+            "vehicle": {
+                'track_id': vehicle.get('track_id'),
+                'plate': vehicle.get('plate'),
+                'speed': vehicle.get('speed'),
+                'speed_violation': vehicle.get('speed_violation'),
+                'total_violations': vehicle.get('total_violations'),
+                'lane_violations': [
+                    {
+                        'type': v.get('type'),
+                        'severity': v.get('severity'),
+                        'description': v.get('description'),
+                        'timestamp': v.get('timestamp').isoformat() if hasattr(v.get('timestamp'), 'isoformat') else str(v.get('timestamp'))
+                    }
+                    for v in lane_violations
+                ]
+            }
         })
     except Exception as e:
         return jsonify({
@@ -1059,8 +1293,8 @@ def start_detection():
             print("[INFO] Creating VehicleDataIntegrator...")
             current_session['integrator'] = VehicleDataIntegrator(speed_limit=60)
             
-            print("[INFO] Creating SafetyEventDetector...")
-            current_session['safety_detector'] = SafetyEventDetector()
+            print("[INFO] Creating SafetyEventDetector with lane detection...")
+            current_session['safety_detector'] = SafetyEventDetector(enable_lane_detection=True)
             
             print(f"[INFO] Creating VehicleSpeedDetector with video: {video_path}")
             current_session['speed_detector'] = VehicleSpeedDetector(headless=True)
@@ -1078,7 +1312,6 @@ def start_detection():
             
         except Exception as init_error:
             print(f"[ERROR] Detector initialization failed: {init_error}")
-            import traceback
             traceback.print_exc()
             return jsonify({
                 "success": False,
@@ -1144,12 +1377,15 @@ def get_detection_stats():
         vehicles = current_session['integrator'].get_all_vehicles()
         violations = current_session['integrator'].get_violations()
         safety_detector = current_session['safety_detector']
+        integrator = current_session['integrator']
         
         stats = {
             'total_vehicles_tracked': len(vehicles),
             'vehicles_with_speed': sum(1 for v in vehicles.values() if v['speed'] is not None),
             'vehicles_with_plate': sum(1 for v in vehicles.values() if v['plate'] is not None),
-            'speeding_violations': len(violations),
+            'speeding_violations': len(integrator.get_speed_violations()),
+            'lane_violations': len(integrator.get_lane_violations()),
+            'total_violations': len(integrator.get_all_violations()),
             'safety_alerts': {
                 'total': len(safety_detector.alerts),
                 'collisions': len(safety_detector.collisions),
@@ -1318,23 +1554,6 @@ def get_system_overview():
         }), 500
 
 
-# Error Handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "success": False,
-        "error": "Endpoint not found"
-    }), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        "success": False,
-        "error": "Internal server error"
-    }), 500
-
-
 @app.route('/api/mark-action', methods=['POST'])
 def mark_action():
     try:
@@ -1352,7 +1571,6 @@ def mark_action():
         return jsonify({"success": True, "appended": appended}), 201
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-
 
 if __name__ == '__main__':
     logging.info("Starting Traffic Management + ML Accident Detection API...")

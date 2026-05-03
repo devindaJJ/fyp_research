@@ -646,12 +646,33 @@
     border-radius: 30px;
     font-size: 14px;
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .status-badge.active {
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    background: #16a34a;
+    color: #ffffff;
+    border: 2px solid #15803d;
+    font-weight: 700;
+}
+
+.status-badge.occupied {
+    background: #dc2626;
+    color: #ffffff;
+    border: 2px solid #991b1b;
+    font-weight: 700;
+}
+
+.status-badge.medium {
+    font-size: 12px;
+    padding: 4px 12px;
+}
+
+.status-badge.small {
+    font-size: 11px;
+    padding: 3px 10px;
 }
 
 .not-found-card {

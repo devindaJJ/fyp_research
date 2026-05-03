@@ -124,19 +124,19 @@ class GoogleSheetsHandler:
                     distance_val = 0.0
 
                 processed_data.append({
-                    "timestamp": timestamp,
-                    "distance": distance_val,
-                    "status": status,
-                    "location": record.get("Location") or record.get("location") or "Unknown",
-                    "device_id": record.get("Device_ID") or record.get("DeviceId") or record.get("device") or None,
-                    "rssi": record.get("RSSI_dBm") or record.get("rssi") or None,
-                    "latitude": record.get("Latitude") or record.get("lat") or None,
-                    "longitude": record.get("Longitude") or record.get("lon") or None,
-                    "raw": record
+                    'timestamp': timestamp,
+                    'distance': distance_val,
+                    'status': status,
+                    'location': record.get('Location') or record.get('location') or 'Unknown',
+                    'device_id': record.get('Device_ID') or record.get('DeviceId') or record.get('device') or None,
+                    'rssi': record.get('RSSI_dBm') or record.get('rssi') or None,
+                    'latitude': record.get('Latitude') or record.get('lat') or None,
+                    'longitude': record.get('Longitude') or record.get('lon') or None,
+                    'raw': record
                 })
 
             return processed_data[-50:]
-
+        
         except Exception as e:
             print(f"Error reading Google Sheets: {e}")
             return []
