@@ -1449,10 +1449,63 @@ fastapi_app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_GRAPH = load_graph()
-EDGES_DF = load_edges_dataset()
+BASE_GRAPH = None
+EDGES_DF = None
 
 INCIDENTS_FILE = os.path.join("data", "incidents", "manual_incidents.csv")
+
+
+OSM_GRAPH_URL = os.getenv("OSM_GRAPH_URL", "")
+OSM_EDGES_URL = os.getenv("OSM_EDGES_URL", "")
+
+_GRAPH_DIR = os.path.join(os.path.dirname(__file__), "data", "osm")
+_GRAPH_FILE = os.path.join(_GRAPH_DIR, "sri_lanka_drive.graphml")
+_EDGES_FILE = os.path.join(_GRAPH_DIR, "sri_lanka_edges_enriched.csv")
+
+
+def _download_file(url: str, dest: str):
+    import urllib.request
+    logging.info(f"Downloading {url} -> {dest}")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with urllib.request.urlopen(url) as response, open(dest, "wb") as out:
+        total = int(response.headers.get("Content-Length", 0))
+        downloaded = 0
+        chunk = 65536
+        while True:
+            block = response.read(chunk)
+            if not block:
+                break
+            out.write(block)
+            downloaded += len(block)
+            if total:
+                logging.info(f"  {downloaded / 1024 / 1024:.1f} MB / {total / 1024 / 1024:.1f} MB")
+    logging.info(f"Download complete: {dest}")
+
+
+def _ensure_graph_loaded():
+    global BASE_GRAPH, EDGES_DF
+    if BASE_GRAPH is None:
+        if not os.path.exists(_GRAPH_FILE):
+            if OSM_GRAPH_URL:
+                _download_file(OSM_GRAPH_URL, _GRAPH_FILE)
+            else:
+                raise RuntimeError("Route graph file not found and OSM_GRAPH_URL env var not set.")
+        try:
+            BASE_GRAPH = load_graph(_GRAPH_FILE)
+        except Exception as e:
+            logging.error(f"Failed to load graph: {e}")
+            raise RuntimeError(f"Route graph unavailable: {e}")
+    if EDGES_DF is None:
+        if not os.path.exists(_EDGES_FILE):
+            if OSM_EDGES_URL:
+                _download_file(OSM_EDGES_URL, _EDGES_FILE)
+            else:
+                raise RuntimeError("Edges dataset file not found and OSM_EDGES_URL env var not set.")
+        try:
+            EDGES_DF = load_edges_dataset(_EDGES_FILE)
+        except Exception as e:
+            logging.error(f"Failed to load edges dataset: {e}")
+            raise RuntimeError(f"Edges dataset unavailable: {e}")
 
 
 class RouteRequest(BaseModel):
@@ -1525,6 +1578,7 @@ def save_incident_report(report: IncidentReportRequest):
 
 
 def build_graph_for_request(request: RouteRequest):
+    _ensure_graph_loaded()
     straight_distance_m = haversine_distance(
         request.origin_lat,
         request.origin_lng,
