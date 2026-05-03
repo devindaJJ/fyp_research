@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import csv
 import cv2
 import threading
 import time
@@ -8,12 +9,19 @@ import logging
 import joblib
 import gspread
 import traceback
+import datetime
+import pandas as pd
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from google_sheets import GoogleSheetsHandler
 from traffic_routes import traffic_bp
 from datetime import datetime, timedelta
 from pathlib import Path
+
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -425,7 +433,6 @@ def process_video_in_background():
                     
             except Exception as frame_error:
                 print(f"[ERROR] Frame {frame_count} processing failed: {frame_error}")
-                import traceback
                 traceback.print_exc()
                 # Continue with next frame instead of stopping
                 continue
@@ -487,7 +494,6 @@ def get_vehicles():
         })
     except Exception as e:
         logging.error(f"Error in get_accidents: {e}")
-        import traceback
         logging.error(traceback.format_exc())
         return jsonify({
             "success": False,
@@ -702,7 +708,6 @@ def get_accidents():
         })
     except Exception as e:
         logging.error(f"Error in get_accidents: {e}")
-        import traceback
         logging.error(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -767,7 +772,6 @@ def get_statistics():
         return jsonify({"success": True, "statistics": stats, "timestamp": now.isoformat()})
     except Exception as e:
         logging.error(f"Error in get_statistics: {e}")
-        import traceback
         logging.error(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -1066,7 +1070,6 @@ def start_detection():
             
         except Exception as init_error:
             print(f"[ERROR] Detector initialization failed: {init_error}")
-            import traceback
             traceback.print_exc()
             return jsonify({
                 "success": False,
@@ -1325,23 +1328,6 @@ def internal_error(error):
     }), 500
 
 
-# Error Handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "success": False,
-        "error": "Endpoint not found"
-    }), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        "success": False,
-        "error": "Internal server error"
-    }), 500
-
-
 # Mark an action (dispatch or resolve) against a device/record
 @app.route('/api/mark-action', methods=['POST'])
 def mark_action():
@@ -1362,20 +1348,7 @@ def mark_action():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-if __name__ == '__main__':
-    logging.info("Starting Traffic Management + ML Accident Detection API...")
-    logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
-    logging.info(f"Google Sheets connected: {worksheet is not None}")
-    app.run(debug=True, host='0.0.0.0', port=8000)import csv
-import datetime
-import os
-import time
-import pandas as pd
-
-from fastapi import FastAPI
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-
+# --- FastAPI Routing App (Incident-Aware Rerouting) ---
 from services.rerouting_engine import (
     load_graph,
     load_edges_dataset,
@@ -1392,9 +1365,9 @@ from services.rerouting_engine import (
     haversine_distance
 )
 
-app = FastAPI()
+fastapi_app = FastAPI()
 
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -1426,8 +1399,8 @@ class IncidentReportRequest(BaseModel):
     description: str = ""
 
 
-@app.get("/")
-def home():
+@fastapi_app.get("/")
+def fastapi_home():
     return {"message": "Sri Lanka Incident-Aware Routing API is running"}
 
 
@@ -1473,7 +1446,7 @@ def save_incident_report(report: IncidentReportRequest):
             report.lng,
             "active",
             report.description,
-            datetime.datetime.now().isoformat()
+            datetime.now().isoformat()
         ])
 
 
@@ -1504,7 +1477,7 @@ def build_graph_for_request(request: RouteRequest):
     )
 
     sub_edges_df = filter_edges_for_subgraph(EDGES_DF, sub_base_graph)
-    current_hour = datetime.datetime.now().hour
+    current_hour = datetime.now().hour
 
     routing_graph = build_routing_graph(
         sub_base_graph,
@@ -1520,7 +1493,7 @@ def build_graph_for_request(request: RouteRequest):
     return routing_graph, long_distance_mode, max_route_points, active_incident_count
 
 
-@app.get("/api/incidents")
+@fastapi_app.get("/api/incidents")
 def get_active_incidents():
     incidents_df = load_incidents()
 
@@ -1531,7 +1504,7 @@ def get_active_incidents():
     }
 
 
-@app.post("/api/incidents/report")
+@fastapi_app.post("/api/incidents/report")
 def report_incident(report: IncidentReportRequest):
     save_incident_report(report)
 
@@ -1541,7 +1514,7 @@ def report_incident(report: IncidentReportRequest):
     }
 
 
-@app.post("/api/traffic/analyze-route")
+@fastapi_app.post("/api/traffic/analyze-route")
 def analyze_route(request: RouteRequest):
     routing_graph, long_distance_mode, max_route_points, active_incident_count = build_graph_for_request(request)
 
@@ -1619,7 +1592,7 @@ def analyze_route(request: RouteRequest):
             "origin": request.origin_name or "Current Location",
             "destination": request.destination_name or "Destination",
             "vehicle_type": request.vehicle_type,
-            "analysis_time": datetime.datetime.now().isoformat(),
+            "analysis_time": datetime.now().isoformat(),
             "routing_source": "sri_lanka_incident_aware_engine",
             "long_distance_mode": long_distance_mode,
 
@@ -1660,7 +1633,7 @@ def analyze_route(request: RouteRequest):
     }
 
 
-@app.post("/api/traffic/alternative-routes")
+@fastapi_app.post("/api/traffic/alternative-routes")
 def alternative_routes(request: RouteRequest):
     routing_graph, long_distance_mode, max_route_points, active_incident_count = build_graph_for_request(request)
 
@@ -1727,3 +1700,10 @@ def alternative_routes(request: RouteRequest):
         },
         "alternatives": alternatives
     }
+
+
+if __name__ == '__main__':
+    logging.info("Starting Traffic Management + ML Accident Detection API...")
+    logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
+    logging.info(f"Google Sheets connected: {worksheet is not None}")
+    app.run(debug=True, host='0.0.0.0', port=8000)
