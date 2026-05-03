@@ -7,7 +7,6 @@ import threading
 import time
 import logging
 import joblib
-import gspread
 import traceback
 import datetime
 import pandas as pd
@@ -21,6 +20,11 @@ from google_sheets import GoogleSheetsHandler
 from traffic_routes import traffic_bp
 from datetime import datetime, timedelta
 from pathlib import Path
+import smtplib
+from email.message import EmailMessage
+import logging
+import gspread
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -54,6 +58,9 @@ try:
 except Exception as e:
     sheets_handler = None
     logging.error(f"Failed to initialize GoogleSheetsHandler: {e}")
+
+PARKING_MEMORY_MAX = 500
+parking_records_in_memory = []
 
 # --- ML models, Google Sheets worksheet, and accident detector (merged from Ishani branch) ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -509,17 +516,12 @@ def ingest_parking():
         if not payload:
             return jsonify({"success": False, "error": "No JSON payload provided"}), 400
 
-        # accept either a single record or a list of records
         records = payload if isinstance(payload, list) else [payload]
         appended = 0
         for rec in records:
-            # Basic validation and normalization
             rec = rec or {}
-            # Ensure timestamp exists
             if not rec.get('timestamp') and not rec.get('Time'):
                 rec['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-            # Derive Status if not provided
             if 'Status' not in rec and 'status' not in rec:
                 dist = rec.get('distance') or rec.get('Distance') or rec.get('Distance_cm') or 9999
                 try:
@@ -527,8 +529,12 @@ def ingest_parking():
                 except Exception:
                     dval = 9999
                 rec['Status'] = 'OCCUPIED' if dval < 200 else 'VACANT'
-
-            sheets_handler.append_parking_record(rec)
+##
+            parking_records_in_memory.append(rec)
+            if len(parking_records_in_memory) > PARKING_MEMORY_MAX:
+                parking_records_in_memory.pop(0)
+            if sheets_handler:
+                sheets_handler.append_parking_record(rec)
             appended += 1
 
         return jsonify({"success": True, "appended": appended}), 201
@@ -656,6 +662,25 @@ def receive_sensor_data():
         }
 
         accident = detector.analyze_sensor_data(device_id, distance, impact_detected, total_impacts, location, timestamp)
+##
+        if accident:
+            accident['confirmed'] = True
+            try:
+                send_accident_alert(accident)
+            except Exception as e:
+                logging.warning(f"Failed to send email alert: {e}")
+
+        return jsonify({
+            "success": True,
+            "message": "Sensor data received and analyzed",
+            "accident_detected": accident is not None,
+            "accident": accident
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+                
 
         return jsonify({
             "success": True,
@@ -1229,7 +1254,17 @@ def get_violation_history():
             "error": str(e),
             "violations": []
         }), 200  # Still return 200 to avoid frontend errors
+##
 
+def _get_parking_data():
+    if parking_records_in_memory:
+        return parking_records_in_memory
+    if sheets_handler:
+        try:
+            return sheets_handler.get_parking_data()
+        except Exception:
+            pass
+    return []
 
 @app.route('/api/parking/status', methods=['GET'])
 def get_parking_status():
@@ -1269,10 +1304,11 @@ def get_parking_data():
 @app.route('/api/system/overview', methods=['GET'])
 def get_system_overview():
     """Get complete system overview"""
+    ##
     try:
-        # Get parking data
-        parking_data = sheets_handler.get_parking_data()
-        occupied = sum(1 for p in parking_data if p.get('status') == 'OCCUPIED')
+         # Get parking data       
+        parking_data = _get_parking_data()
+        occupied = sum(1 for p in parking_data if (p.get('status') or p.get('Status') or '').upper() == 'OCCUPIED')
         
         # Get detection status
         detection_active = current_session.get('is_processing', False)
@@ -1347,6 +1383,44 @@ def mark_action():
         return jsonify({"success": True, "appended": appended}), 201
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+##
+# --- Email alert function ---
+def send_accident_alert(accident):
+    """Send an alert email when an accident is detected.
+
+    The function logs its activity and swallows exceptions so callers
+    don't crash the request handler.
+    """
+    try:
+        sender_email = "madhukaishani123@gmail.com"
+        receiver_email = "ishanimadhuka12345@gmail.com"
+        app_password = "ejhtatmzqwkhqvyl"  
+
+        msg = EmailMessage()
+        msg["Subject"] = "🚨 Accident Detected!"
+        msg["From"] = sender_email
+        msg["To"] = receiver_email
+        msg.set_content(
+            f"An accident has been detected!\n\n"
+            f"Device ID: {accident['device_id']}\n"
+            f"Location: {accident['location']}\n"
+            f"Timestamp: {accident['timestamp']}\n"
+            f"Distance: {accident['distance']}\n"
+            f"Distance: {accident['distance']}\n"
+            f"Impact Detected: {accident['impact_detected']}\n"
+            f"Total Impacts: {accident['total_impacts']}"
+        )
+
+        # Send email via Gmail SMTP
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender_email, app_password)
+            server.send_message(msg)
+        logging.info("✅ Accident alert email sent to %s", receiver_email)
+    except Exception as e:
+        logging.error("Failed to send accident alert email: %s", e)
+        logging.debug(traceback.format_exc())
+
 
 # --- FastAPI Routing App (Incident-Aware Rerouting) ---
 from services.rerouting_engine import (
@@ -1707,3 +1781,5 @@ if __name__ == '__main__':
     logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
     logging.info(f"Google Sheets connected: {worksheet is not None}")
     app.run(debug=True, host='0.0.0.0', port=8000)
+
+    
