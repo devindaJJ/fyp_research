@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary-blue: #161e54;
+  /* Deep blue from header */
+  --secondary-blue: #2251cc;
+  /* Brighter blue for actions/charts */
+  --accent-cyan: #00bcd4;
+  /* For highlights if needed */
+  --text-primary: #1e1e1e;
+  --text-secondary: #757575;
+  --text-white: #ffffff;
+  --bg-app: #f4f6f8;
+  --bg-white: #ffffff;
+  --border-color: #e0e0e0;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--bg-white);
+  width: 100%;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+}
+
+.section {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.section-title {
+  font-size: 1.25rem;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  font-style: italic;
+  /* Matching the "Analytics & Reports" style in image often looks generic but italicized in the prompt image? Wait, let me check image. */
+  /* Image Text Analysis: "Analytics & Reports" looks Bold Italic? Or just Bold. "Overview" looks Bold Italic. "Urban Traffic Management System" looks Italic in subtitle? No. */
+  /* Actually, looking at the image provided: 
+     "Urban Traffic Management System" (Title) - Italic? No, just serif? Or Sans-serif. Looks like Sans but maybe Italic.
+     "Analytics & Reports" - Bold Italic Serif? No, likely Sans.
+     "Overview" - Bold Italic.
+  */
+  font-style: italic;
+  font-weight: 800;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}

@@ -1,0 +1,90 @@
+.analytics-section {
+    background-color: var(--bg-app);
+}
+
+.analytics-controls {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.tab-group span {
+    margin-right: 1.5rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.tab-group span.active {
+    color: var(--secondary-blue);
+    border-bottom: 2px solid var(--secondary-blue);
+    padding-bottom: 0.6rem;
+}
+
+.badge {
+    background: var(--secondary-blue);
+    color: #fff;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    margin-left: 4px;
+}
+
+.stats-overview {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.stat-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+.charts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.chart-wrapper {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.chart-wrapper.half {
+    width: 100%;
+    /* Or split if row */
+}
+
+.chart-row {
+    display: flex;
+    gap: 1.5rem;
+}
+
+h4 {
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}

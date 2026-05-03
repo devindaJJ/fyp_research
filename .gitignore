@@ -1,67 +1,274 @@
-# ----------------------
-# Python
-# ----------------------
+__marimo__/
 __pycache__/
+__pycache__/
+__pypackages__/
+!datasets/number-plate-detection-sri-lanka/
+.abstra/
+.cache
+.coverage
+.coverage.*
+.cursorignore
+.cursorindexingignore
+.dmypy.json
+.DS_Store
+.DS_Store
+.eggs/
+.env
+.env
+.env.*.local
+.env.local
+.envrc
+.hypothesis/
+.idea/
+.installed.cfg
+.ipynb_checkpoints
+.mypy_cache/
+.nox/
+.npm/
+.pdm-build/
+.pdm-python
+.pixi
+.pybuilder/
+.pypirc
+.pyre/
+.pytest_cache/
+.Python
+.pytype/
+.ropeproject
+.ruff_cache/
+.scrapy
+.spyderproject
+.spyproject
+.tox/
+.txt
+.venv
+.venv/
+.vscode/
+.vscode/
+.webassets-cache
+.yarn/
+*.backup
+*.bak
+*.cover
+*.csv
+*.csv
+*.egg
+*.egg-info/
+*.egg-info/
+*.graphml
+*.h5
+*.joblib
+*.log
+*.log
+*.manifest
+*.mo
+*.onnx
+*.pkl
+*.pot
+*.pt
+*.pth
+*.py.cover
 *.py[cod]
+*.py[codz]
+*.pyc
+*.pyd
+*.pyo
+*.sage.py
+*.so
+*.spec
+*.swo
+*.swp
+*.tar
+*.tar.gz
+*.temp
+*.temp# Byte-compiled / optimized / DLL files
+*.tmp
+*.tmp
+*.zip
+**/__pycache__/
+**/api_keys.json
+**/credentials.json
+*~
 *$py.class
-
+*$py.class
+/site
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   commonly ignored for libraries.
+#   For a library or package, you might want to ignore these files since the code is
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#   in the .venv directory. It is recommended not to include this directory in version control.
+#   install all needed dependencies.
+#   intended to run in multiple environments; otherwise, check them in:
+#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
+#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#  and can be added to the global gitignore or merged into this file.  For a more nuclear
+#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
+#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
+#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
+#  refer to https://docs.cursor.com/context/ignore-files
+#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
+#  Usually these files are written by a python script from a template
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  you could uncomment the following to ignore the entire vscode folder
+# ----------------------
+# .python-version
+# .vscode/
+# Abstra
+# Abstra is an AI-powered process automation framework.
+# Build outputs
+# C extensions
+# Cache folders
+# Celery stuff
+# Cursor
+# Cython debug symbols
+# Data and cache files
+# Distribution / packaging
+# Django stuff:
+# Environments
+# Flask stuff:
+# Frontend build outputs
+# IDE and Editor files
+# Ignore directories containing user credentials, local state, and settings.
+# Installer logs
+# IPython
+# Jupyter Notebook
+# Large data files (optional)
+# Large dataset files
+# Learn more at https://abstra.io/docs
+# Logs
+# Marimo
+# mkdocs documentation
+# Model and data files
+# mypy
+# Node / React
+# Node modules and dependencies
+# Node.js dependencies
+# npm logs
+# OS Files
+# OS specific
+# pdm
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+# pipenv
+# pixi
+# poetry
+# PyBuilder
+# PyCharm
+# pyenv
+# PyInstaller
+# PyPI configuration file
+# Pyre type checker
+# Python
+# Python build files
+# Python environment variables
+# pytype static type analyzer
+# React build output
+# Rope project settings
+# Ruff stuff:
+# SageMath parsed files
+# Scrapy stuff:
+# Sphinx documentation
+# Spyder project settings
+# Temporary files
+# Testing / temporary
+# Translations
+# Unit test / coverage reports
+# UV
 # Virtual environment
-venv/
+# Virtual environments
+# Visual Studio Code
+# VS Code
+#.idea/
+#pdm.lock
+#pdm.toml
+#Pipfile.lock
+#pixi.lock
+#poetry.lock
+#poetry.toml
+#uv.lock
+anpr-env/
+build/
+build/
+cache/
+celerybeat-schedule
+celerybeat.pid
+config/*_private.json
+cover/
+coverage.xml
+cython_debug/
+data/cache/
+data/exports/*.csv
+data/exports/*.json
+data/logs/
+datasets/
+db.sqlite3
+db.sqlite3-journal
+desktop.ini
+develop-eggs/
+dist/
+dist/
+dmypy.json
+docs/_build/
+downloads/
+eggs/
+env.bak/
 env/
 ENV/
-
-# Python environment variables
-.env
-
-# Python build files
-build/
-dist/
-*.egg-info/
-
-# ----------------------
-# Node / React
-# ----------------------
-node_modules/
-frontend/node_modules/
-
-# React build output
+env/
+ENV/
 frontend/build/
-
-# npm logs
+frontend/node_modules/
+frontend/traffic-dashboard/.parcel-cache/
+frontend/traffic-dashboard/build/
+frontend/traffic-dashboard/dist/
+frontend/traffic-dashboard/node_modules/
+htmlcov/
+instance/
+ipython_config.py
+keys/credentials.json
+lib64/
+local_settings.py
+MANIFEST
+marimo/_lsp/
+marimo/_static/
+models/**/*.h5
+models/**/*.pkl
+node_modules/
+node_modules/
+nosetests.xml
 npm-debug.log*
+npm-debug.log*
+package-lock.json
+parts/
+pip-delete-this-directory.txt
+pip-log.txt
+profile_default/
+raw_data/
+sdist/
+share/python-wheels/
+src/models/trained/
+target/
+Thumbs.db
+Thumbs.db
+var/
+venv.bak/
+venv/
+venv/
+videos/
+wheels/
+yarn-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# ----------------------
-# VS Code
-# ----------------------
-.vscode/
-
-# ----------------------
-# OS Files
-# ----------------------
-.DS_Store
-Thumbs.db
-
-# ----------------------
-# Logs
-# ----------------------
-*.log
-
-# ----------------------
-# Cache folders
-# ----------------------
-cache/
-**/__pycache__/
-
-# ----------------------
-# Large data files (optional)
-# ----------------------
-*.graphml
-*.csv
-
-# ----------------------
-# Testing / temporary
-# ----------------------
-*.tmp
-*.temp
+yarn-error.log*
+yarn.lock
