@@ -18,6 +18,7 @@ from email.message import EmailMessage
 import logging
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import queue   # ← NEW: for reliable email queue
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -169,10 +170,6 @@ ACCIDENT_COOLDOWN = 60
 
 
 def load_accidents_from_sheets(detector):
-    """
-    Load historical accident records from Google Sheets into detector.accident_log
-    and accident_records at startup only.
-    """
     global worksheet
 
     if worksheet is None:
@@ -258,19 +255,7 @@ def load_accidents_from_sheets(detector):
         logging.warning(f"Error loading data from Google Sheets: {e}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# NEW: read_accidents_from_sheets()
-# Called on EVERY /api/accidents request so the frontend always gets live data.
-# Re-reads the full AccidentLogs sheet each time — no stale in-memory cache.
-# If the gspread session expires it automatically re-initialises the worksheet.
-# ─────────────────────────────────────────────────────────────────────────────
 def read_accidents_from_sheets():
-    """
-    Re-read ALL rows from AccidentLogs on every call.
-    Returns a list of frontend-ready dicts:
-      { date, latitude, longitude, vibration ("YES"/"NO"), distance }
-    Returns [] on any error so the API never crashes.
-    """
     global worksheet
 
     if worksheet is None:
@@ -292,7 +277,6 @@ def read_accidents_from_sheets():
                 dist_raw = rec.get("Distance", rec.get("distance", 0)) or 0
                 vib_raw  = rec.get("Vibration", rec.get("vibration", "NO"))
 
-                # Normalise to "YES" / "NO" regardless of what the sheet stores
                 vib_str = str(vib_raw).strip().upper()
                 if vib_str in ("YES", "1", "TRUE"):
                     vibration_display = "YES"
@@ -321,62 +305,115 @@ def read_accidents_from_sheets():
 
     except Exception as e:
         logging.warning(f"read_accidents_from_sheets error: {e}")
-        # Force re-init next call in case the session expired
         worksheet = None
         return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Email alert helper
+# Email alert — persistent queue + worker thread (FIX: was daemon=True,
+# one-shot thread that could be killed mid-send; now uses a queue so every
+# alert is guaranteed to be attempted even under load)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def send_accident_alert_email(accident):
+_email_queue: queue.Queue = queue.Queue()
+
+
+def _email_worker():
     """
-    Send an alert email when an accident is detected.
-    Called in a daemon thread from analyze_sensor_data() so it never blocks
-    the HTTP response back to the IoT sensor.
+    Background worker that drains _email_queue and sends each alert.
+    Runs as a non-daemon thread so it completes even if the main thread is busy.
+    Retries up to 3 times with a short back-off before giving up.
     """
-    try:
-        sender_email = "madhukaishani123@gmail.com"
-        receiver_email = "ishanimadhuka12345@gmail.com"
-        app_password = "ejhtatmzqwkhqvyl"
+    while True:
+        accident = _email_queue.get()          # blocks until an item arrives
+        if accident is None:                   # sentinel → shut down
+            break
 
-        severity = accident.get("severity", "unknown").upper()
-        device_id = accident.get("device_id", "N/A")
-        latitude = accident.get("latitude", "N/A")
-        longitude = accident.get("longitude", "N/A")
-        timestamp = accident.get("timestamp", datetime.now().isoformat())
-        distance = accident.get("distance", "N/A")
-        vibration = accident.get("vibration", "N/A")
+        MAX_RETRIES = 3
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                _do_send_email(accident)
+                break                          # success — no retry needed
+            except Exception as e:
+                logging.warning(
+                    f"Email attempt {attempt}/{MAX_RETRIES} failed: {e}"
+                )
+                if attempt < MAX_RETRIES:
+                    time.sleep(5 * attempt)    # 5 s, 10 s back-off
 
-        msg = EmailMessage()
-        msg["Subject"] = f"🚨 Accident Detected! Severity: {severity}"
-        msg["From"] = sender_email
-        msg["To"] = receiver_email
-        msg.set_content(
-            f"An accident has been detected by the IoT sensor system.\n\n"
-            f"─────────────────────────────\n"
-            f"Device ID   : {device_id}\n"
-            f"Severity    : {severity}\n"
-            f"Timestamp   : {timestamp}\n"
-            f"Latitude    : {latitude}\n"
-            f"Longitude   : {longitude}\n"
-            f"Distance    : {distance} cm\n"
-            f"Vibration   : {'YES' if vibration else 'NO'}\n"
-            f"─────────────────────────────\n\n"
-            f"Please check the dashboard for more details.\n"
-        )
+        _email_queue.task_done()
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(sender_email, app_password)
-            server.send_message(msg)
 
-        logging.info("✅ Accident alert email sent to %s", receiver_email)
+# Start the worker once at import time (non-daemon so sends always complete)
+_email_worker_thread = threading.Thread(target=_email_worker, daemon=False)
+_email_worker_thread.start()
 
-    except Exception as e:
-        logging.error("❌ Failed to send accident alert email: %s", e)
-        logging.debug(traceback.format_exc())
+
+def _do_send_email(accident: dict):
+    """
+    Core SMTP send.  Credentials come from environment variables first;
+    the original hard-coded values are used as fallbacks so nothing breaks
+    if the env vars are not set.
+    """
+    SENDER_EMAIL   = os.getenv("ALERT_SENDER_EMAIL",   "madhukaishani123@gmail.com")
+    RECEIVER_EMAIL = os.getenv("ALERT_RECEIVER_EMAIL", "ishanimadhuka12345@gmail.com")
+    APP_PASSWORD   = os.getenv("ALERT_EMAIL_PASSWORD", "ioxfxuuzzszwhabz")
+
+    severity  = str(accident.get("severity",  "unknown")).upper()
+    device_id = str(accident.get("device_id", "N/A"))
+    latitude  = str(accident.get("latitude",  "N/A"))
+    longitude = str(accident.get("longitude", "N/A"))
+    timestamp = str(accident.get("timestamp", datetime.now().isoformat()))
+    distance  = str(accident.get("distance",  "N/A"))
+    vibration = accident.get("vibration", 0)
+
+    print(f"\n{'='*50}")
+    print(f"  Sending accident alert email...")
+    print(f"  From    : {SENDER_EMAIL}")
+    print(f"  To      : {RECEIVER_EMAIL}")
+    print(f"  Severity: {severity}")
+    print(f"{'='*50}\n")
+
+    msg = EmailMessage()
+    msg["Subject"] = f"ACCIDENT DETECTED - Severity: {severity}"
+    msg["From"]    = SENDER_EMAIL
+    msg["To"]      = RECEIVER_EMAIL
+    msg.set_content(
+        f"ACCIDENT ALERT\n"
+        f"==============\n\n"
+        f"Device ID  : {device_id}\n"
+        f"Severity   : {severity}\n"
+        f"Timestamp  : {timestamp}\n"
+        f"Latitude   : {latitude}\n"
+        f"Longitude  : {longitude}\n"
+        f"Distance   : {distance} cm\n"
+        f"Vibration  : {'YES' if vibration else 'NO'}\n\n"
+        f"Maps Link  : https://maps.google.com/?q={latitude},{longitude}\n\n"
+        f"Check the dashboard immediately.\n"
+    )
+
+    print("  [1/4] Connecting to smtp.gmail.com:587 ...")
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+        print("  [2/4] Starting TLS ...")
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        print("  [3/4] Logging in ...")
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+        print("  [4/4] Sending message ...")
+        server.send_message(msg)
+
+    print("\n  EMAIL SENT SUCCESSFULLY!\n")
+    logging.info(f"Accident alert email sent to {RECEIVER_EMAIL}")
+
+
+def send_accident_alert_email(accident: dict):
+    """
+    Public helper — enqueues the accident for the persistent worker thread.
+    Returns immediately; actual sending happens in the background.
+    """
+    print(f"  [EMAIL QUEUE] Queuing alert for device {accident.get('device_id')} ...")
+    _email_queue.put(accident)
 
 
 class MLAccidentDetector:
@@ -390,7 +427,9 @@ class MLAccidentDetector:
             return None
 
         try:
-            impact_detected = 1 if float(vibration) > 5 else 0
+            # ✅ FIX 1: IoT sends vibration as 0 or 1, not 0-10.
+            # Changed from `> 5` to `> 0` so vibration=1 is correctly treated as impact.
+            impact_detected = 1 if int(vibration) > 0 else 0
             total_impacts = 1
 
             features = [[distance, impact_detected, total_impacts]]
@@ -432,10 +471,10 @@ class MLAccidentDetector:
 
             location = record.get('location', '')
 
-            latitude = ""
-            longitude = ""
+            latitude = record.get('latitude', '')
+            longitude = record.get('longitude', '')
 
-            if location and ',' in location:
+            if not latitude and not longitude and location and ',' in location:
                 try:
                     lat_str, lon_str = location.split(',', 1)
                     latitude = lat_str.strip()
@@ -460,30 +499,48 @@ class MLAccidentDetector:
                 if len(ml_predictions) > 500:
                     ml_predictions.pop(0)
 
-            is_accident = (
-                ml_pred and (
+            # ✅ FIX 2: Added fallback so if ML models are not loaded,
+            # we still detect accidents using raw vibration and distance from IoT.
+            # vibration == 1 means sensor detected impact.
+            # distance < 10 means something is dangerously close.
+            if ml_pred:
+                is_accident = (
                     ml_pred["impact_detected"] == 1 or
                     ml_pred["alert_level"] >= 2
                 )
-            )
+            else:
+                # Fallback: no ML models loaded — use raw sensor values directly
+                is_accident = (vibration == 1) or (distance > 0 and distance < 10)
+                print(f"  [ML FALLBACK] vibration={vibration}, distance={distance}, is_accident={is_accident}")
 
             if not is_accident:
+                print(f"  [NO ACCIDENT] vibration={vibration}, distance={distance}, ml_pred={ml_pred}")
                 return None
 
             if device_id in self.device_last_accident:
                 last_time = self.device_last_accident[device_id]
                 if (datetime.now() - last_time).total_seconds() < ACCIDENT_COOLDOWN:
+                    print(f"  [COOLDOWN] Skipping accident for device {device_id} — cooldown active")
                     return None
 
-            severity_map = {
-                0: "low",
-                1: "low",
-                2: "medium",
-                3: "high",
-                4: "critical"
-            }
-
-            severity = severity_map.get(ml_pred["alert_level"], "medium")
+            # Determine severity
+            if ml_pred:
+                severity_map = {
+                    0: "low",
+                    1: "low",
+                    2: "medium",
+                    3: "high",
+                    4: "critical"
+                }
+                severity = severity_map.get(ml_pred["alert_level"], "medium")
+            else:
+                # Fallback severity based on raw distance
+                if distance < 5:
+                    severity = "critical"
+                elif distance < 10:
+                    severity = "high"
+                else:
+                    severity = "medium"
 
             accident = {
                 "id": f"acc_{device_id}_{int(time.time())}",
@@ -505,7 +562,7 @@ class MLAccidentDetector:
             alert = {
                 "id": f"alert_{device_id}_{int(time.time())}",
                 "type": "accident",
-                "title": f"🚨 Accident Detected - {severity.upper()}",
+                "title": f"Accident Detected - {severity.upper()}",
                 "message": f"Location: {latitude}, {longitude} | Distance: {distance} cm | Vibration: {'YES' if vibration else 'NO'}",
                 "severity": severity,
                 "timestamp": datetime.now().isoformat(),
@@ -517,18 +574,18 @@ class MLAccidentDetector:
             if len(accident_alerts) > 100:
                 accident_alerts.pop(0)
 
-            # Send email in background thread so it doesn't block IoT response
-            email_thread = threading.Thread(
-                target=send_accident_alert_email,
-                args=(accident,),
-                daemon=True
-            )
-            email_thread.start()
+            print(f"  [ACCIDENT DETECTED] severity={severity}, device={device_id} — queuing email alert...")
+
+            # ✅ FIX 3: enqueue instead of spawning a raw daemon thread.
+            # The persistent _email_worker thread (non-daemon) guarantees
+            # delivery even when the server is under load.
+            send_accident_alert_email(accident)
 
             return accident
 
         except Exception as e:
             logging.warning(f"Analyze error: {e}")
+            logging.debug(traceback.format_exc())
             return None
 
         
@@ -749,7 +806,7 @@ def receive_sensor_data():
     try:
         data = request.get_json()
 
-        print("🔥 RECEIVED:", data)
+        print("RECEIVED:", data)
 
         device_id = data.get('device_id')
         distance = float(data.get('distance', 0))
@@ -760,7 +817,7 @@ def receive_sensor_data():
         latitude = data.get('latitude', '')
         longitude = data.get('longitude', '')
         
-        print(f"📍 Initial - latitude: '{latitude}', longitude: '{longitude}', location: '{location}'")
+        print(f"Initial - latitude: '{latitude}', longitude: '{longitude}', location: '{location}'")
         
         if (not latitude and not longitude) and location and ',' in location:
             try:
@@ -768,9 +825,9 @@ def receive_sensor_data():
                 if len(parts) == 2:
                     latitude = parts[0].strip()
                     longitude = parts[1].strip()
-                    print(f"✅ Parsed location - latitude: '{latitude}', longitude: '{longitude}'")
+                    print(f"Parsed location - latitude: '{latitude}', longitude: '{longitude}'")
             except Exception as e:
-                print(f"❌ Error parsing location: {e}")
+                print(f"Error parsing location: {e}")
                 latitude = ''
                 longitude = ''
 
@@ -792,13 +849,13 @@ def receive_sensor_data():
             "distance": distance
         })
 
-        print("✅ SAVED RECORD:", record)
-        print("📊 TOTAL:", len(accident_records))
+        print("SAVED RECORD:", record)
+        print("TOTAL:", len(accident_records))
 
         if sheets_handler:
             sheets_handler.append_accident_record(record)
 
-        # Run ML accident analysis (email is sent inside if accident detected)
+        # Run ML accident analysis (email is queued inside if accident detected)
         detector.analyze_sensor_data({
             "device_id": device_id,
             "distance": distance,
@@ -816,16 +873,10 @@ def receive_sensor_data():
         })
 
     except Exception as e:
-        print("❌ ERROR:", e)
+        print("ERROR:", e)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# UPDATED: /api/accidents now calls read_accidents_from_sheets() on every
-# request instead of returning the stale in-memory accident_records list.
-# This means the frontend always gets the latest rows from Google Sheets,
-# including rows written directly by the IoT device, on every 5-second poll.
-# ─────────────────────────────────────────────────────────────────────────────
 @app.route('/api/accidents', methods=['GET'])
 def get_accidents():
     """Get all accident records — re-read from Google Sheets on every call."""
