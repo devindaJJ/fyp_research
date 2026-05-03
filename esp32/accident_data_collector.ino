@@ -7,7 +7,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 const char* ssid = "SLT-Fiber-KYhN6-2.4G";
 const char* password = "19641125";
 // Google Sheets
-String scriptURL = "https://script.google.com/macros/s/AKfycbw6WUs1RVvBWryJvn9FrgzuOpy18tNlt5LiH7wlknBw5wCo6x4X6FSHzUzTGS3JkW8wFw/exec";
+String scriptURL = "https://script.google.com/macros/s/AKfycbyqH8J12NUWF96wt4tHOVD6Vu7mCRDFE2zJ44Hxz8lcmafEBAc_qHTSOjIg1MFUlggi/exec";
 const int xPin = 34;
 const int yPin = 35;
 const int zPin = 36; 
@@ -115,30 +115,55 @@ void Accelerometer(){
 vibrationDetected = false;
   delay(500);
  }
- void sendToGoogle() {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
+//  void sendToGoogle() {
+//   if (WiFi.status() == WL_CONNECTED) {
+    
+//     HTTPClient http;
     
   
     
 
-    String url = scriptURL + "?Latitude=" + String(lat,6) + "&Longitud=" + String(lng,6)+ "&Vibration=" + String(vibrationDetected)+ "&Distance=" + String(distance);
+//     String url = scriptURL + "?Latitude=" + String(lat,6) + "&Longitud=" + String(lng,6)+ "&Vibration=" + String(vibrationDetected)+ "&Distance=" + String(distance);
     
+//     http.begin(url.c_str());
+//     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+//     int httpCode = http.GET();
+    
+//     if (httpCode > 0) {
+//       Serial.println("Data Sent Successfully! Status: " + String(httpCode));
+//     } else {
+//       Serial.println("Error sending data");
+//     }
+//     http.end();
+//   }
+  
+// }
+
+
+void sendToGoogle() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    String url = scriptURL
+      + "?Latitude=" + String(lat, 6)
+      + "&Longitude=" + String(lng, 6)
+      + "&Vibration=" + String(vibrationDetected ? "YES" : "NO")
+      + "&Distance=" + String(distance);
+
     http.begin(url.c_str());
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
     int httpCode = http.GET();
-    
+
     if (httpCode > 0) {
       Serial.println("Data Sent Successfully! Status: " + String(httpCode));
     } else {
       Serial.println("Error sending data");
     }
+
     http.end();
   }
-  
 }
-
-
 
 void Gps(){
   while (gpsSerial.available() > 0) {

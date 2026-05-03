@@ -39,6 +39,7 @@ current_session = {
     'frame_count': 0,
     'processing_thread': None
 }
+accident_records = []
 
 
 app = Flask(__name__)
@@ -55,7 +56,7 @@ except Exception as e:
 PARKING_MEMORY_MAX = 500
 parking_records_in_memory = []
 
-# --- ML models, Google Sheets worksheet, and accident detector (merged from Ishani branch) ---
+# --- ML models, Google Sheets worksheet, and accident detector ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, 'src', 'models', 'trained')
 
@@ -91,12 +92,29 @@ except Exception as e:
     model_impact = None
     model_alert = None
 
-# Google Sheets worksheet used by ML detector (Ishani branch used gspread directly)
+# Google Sheets worksheet used by ML detector
 worksheet = None
+
+
+def get_sheets_handler():
+    global sheets_handler
+    if sheets_handler is None:
+        try:
+            creds_default = os.getenv('SERVICE_ACCOUNT_CREDS') or str(Path(__file__).parent.parent / 'keys' / 'credentials.json')
+            if not os.getenv('SERVICE_ACCOUNT_CREDS') and os.path.exists(creds_default):
+                os.environ['SERVICE_ACCOUNT_CREDS'] = creds_default
+                logging.info(f"SERVICE_ACCOUNT_CREDS was not set; using default: {creds_default}")
+
+            sheets_handler = GoogleSheetsHandler()
+        except Exception as e:
+            logging.warning(f"GoogleSheetsHandler init failed: {e}")
+            logging.debug(traceback.format_exc())
+            return None
+    return sheets_handler
+
 
 def init_google_sheets():
     try:
-        # Prefer project GoogleSheetsHandler if available
         gh = None
         try:
             gh = get_sheets_handler()
@@ -104,15 +122,12 @@ def init_google_sheets():
             gh = None
         if gh is not None:
             try:
-                # If the project handler exposes a worksheet-like object on `sheet`, use it
                 if hasattr(gh, 'sheet') and gh.sheet is not None:
-                    # If the existing sheet is the desired sheet, return it
                     try:
                         if getattr(gh.sheet, 'title', None) == 'AccidentLogs':
                             return gh.sheet
                     except Exception:
                         pass
-                    # Otherwise attempt to open the named worksheet via the handler's client
                 if hasattr(gh, 'client') and os.getenv('SHEET_ID'):
                     try:
                         return gh.client.open_by_key(os.getenv('SHEET_ID')).worksheet('AccidentLogs')
@@ -120,7 +135,6 @@ def init_google_sheets():
                         logging.warning(f"Could not open 'AccidentLogs' via GoogleSheetsHandler: {e}")
             except Exception as e:
                 logging.warning(f"GoogleSheetsHandler usage error: {e}")
-        # Fallback: try to use gspread with credentials file path from keys/credentials.json
         creds_path = os.getenv('SERVICE_ACCOUNT_CREDS') or str(Path(__file__).parent.parent / 'keys' / 'credentials.json')
         logging.info(f"SERVICE_ACCOUNT_CREDS set: {bool(os.getenv('SERVICE_ACCOUNT_CREDS'))}, creds_path exists: {os.path.exists(creds_path)}")
         logging.info(f"SHEET_ID env present: {bool(os.getenv('SHEET_ID'))}")
@@ -147,7 +161,7 @@ def init_google_sheets():
 accidents = []
 from collections import deque
 vibration_data_history = deque(maxlen=1000)
-alerts = []
+accident_alerts = []
 connected_devices = {}
 ml_predictions = []
 
@@ -155,70 +169,214 @@ ACCIDENT_COOLDOWN = 60
 
 
 def load_accidents_from_sheets(detector):
-    """Load existing accidents from Google Sheets on startup (best-effort)."""
+    """
+    Load historical accident records from Google Sheets into detector.accident_log
+    and accident_records at startup only.
+    """
     global worksheet
+
     if worksheet is None:
         worksheet = init_google_sheets()
+
     if not worksheet:
+        logging.warning("No worksheet found")
         return
+
     try:
         records = worksheet.get_all_records()
         logging.info(f"Loading {len(records)} records from Google Sheets...")
+
         for record in records:
             try:
-                # Support multiple possible column names from different sheet versions
-                def fld(rec, keys, default=None):
-                    for k in keys:
-                        if k in rec and rec[k] not in (None, ''):
-                            return rec[k]
-                    return default
+                date = record.get("date", "")
 
-                timestamp = fld(record, ['Timestamp', 'Time', 'Date'], '')
-                device_id = fld(record, ['Device ID', 'DeviceID', 'Device'], 'UNKNOWN')
-                distance = int(fld(record, ['Distance (cm)', 'Distance'], 0) or 0)
-                impact_detected = 1 if str(fld(record, ['Impact Detected', 'Impact', 'Impacts'], 'NO')).upper() == 'YES' else 0
-                total_impacts = int(fld(record, ['Total Impacts', 'Total Impacts', 'Impacts'], 0) or 0)
-                location = fld(record, ['Status', 'Location', 'Place'], 'Unknown Location')
-                alert_level_text = fld(record, ['Alert Level', 'Alert_Level', 'Level'], 'NORMAL')
-                alert_level_map = {'NORMAL': 0, 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'CRITICAL': 4}
-                alert_level = alert_level_map.get(alert_level_text, 1)
-                severity_map = {0: 'low', 1: 'low', 2: 'medium', 3: 'high', 4: 'critical'}
-                severity = severity_map.get(alert_level, 'medium')
-                accident = {
-                    'id': f"acc_{device_id}_{timestamp}",
-                    'device_id': device_id,
-                    'distance': distance,
-                    'impact_detected': impact_detected,
-                    'total_impacts': total_impacts,
-                    'severity': severity,
-                    'location': location,
-                    'timestamp': timestamp,
-                    'status': 'historical',
-                    'confirmed': True,
-                    'ml_prediction': {
-                        'alert_level': alert_level,
-                        'alert_level_text': alert_level_text,
-                        'distance_violation': 1 if record.get('Distance Violation', 'NO') == 'YES' else 0,
-                        'impact_detected': impact_detected
-                    }
+                lat = record.get("Latitude") or record.get("latitude") or ""
+                lon = record.get("Longitude") or record.get("longitude") or ""
+
+                vibration_raw = record.get("Vibration", 0)
+
+                if str(vibration_raw).upper() in ("YES", "NO"):
+                    vibration_display = str(vibration_raw).upper()
+                else:
+                    vibration_display = str(vibration_raw)
+
+                if str(vibration_raw).upper() == "YES":
+                    vibration_numeric = 10
+                else:
+                    try:
+                        vibration_numeric = float(vibration_raw)
+                    except Exception:
+                        vibration_numeric = 0
+
+                distance = float(record.get("Distance", 0) or 0)
+
+                detected = vibration_numeric > 5 or str(vibration_raw).upper() == "YES"
+
+                accident_internal = {
+                    "id": f"acc_{date}",
+                    "date": date,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "vibration": vibration_numeric,
+                    "distance": distance,
+                    "detected": detected,
+                    "severity": "high" if vibration_numeric > 8 else "medium" if vibration_numeric > 5 else "low",
+                    "status": "historical"
                 }
-                detector.accident_log.append(accident)
-                if device_id not in connected_devices:
-                    connected_devices[device_id] = {
-                        'device_id': device_id,
-                        'location': location,
-                        'status': 'online',
-                        'last_seen': timestamp,
-                        'distance': distance,
-                        'impact_detected': impact_detected,
-                        'total_impacts': total_impacts
-                    }
+                detector.accident_log.append(accident_internal)
+
+                accident_records.append({
+                    "id": f"acc_{date}",
+                    "date": date,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "vibration": vibration_display,
+                    "distance": distance,
+                    "detected": detected,
+                    "severity": accident_internal["severity"],
+                    "status": "historical"
+                })
+
+                device_id = record.get("Device_ID", "DEVICE_1")
+
+                connected_devices[device_id] = {
+                    "device_id": device_id,
+                    "location": f"{lat}, {lon}",
+                    "status": "online",
+                    "last_seen": date,
+                    "distance": distance,
+                    "vibration": vibration_display
+                }
+
             except Exception as e:
                 logging.warning(f"Error parsing record: {e}")
                 continue
-        logging.info(f"Loaded {len(detector.accident_log)} accidents from Google Sheets")
+
+        logging.info(f"Loaded {len(detector.accident_log)} accidents from Google Sheets into UI")
+
     except Exception as e:
         logging.warning(f"Error loading data from Google Sheets: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: read_accidents_from_sheets()
+# Called on EVERY /api/accidents request so the frontend always gets live data.
+# Re-reads the full AccidentLogs sheet each time — no stale in-memory cache.
+# If the gspread session expires it automatically re-initialises the worksheet.
+# ─────────────────────────────────────────────────────────────────────────────
+def read_accidents_from_sheets():
+    """
+    Re-read ALL rows from AccidentLogs on every call.
+    Returns a list of frontend-ready dicts:
+      { date, latitude, longitude, vibration ("YES"/"NO"), distance }
+    Returns [] on any error so the API never crashes.
+    """
+    global worksheet
+
+    if worksheet is None:
+        worksheet = init_google_sheets()
+
+    if not worksheet:
+        logging.warning("read_accidents_from_sheets: no worksheet available")
+        return []
+
+    try:
+        records = worksheet.get_all_records()
+        result = []
+
+        for rec in records:
+            try:
+                date     = rec.get("date", "") or rec.get("Date", "")
+                lat      = str(rec.get("Latitude",  rec.get("latitude",  "")) or "")
+                lon      = str(rec.get("Longitude", rec.get("longitude", "")) or "")
+                dist_raw = rec.get("Distance", rec.get("distance", 0)) or 0
+                vib_raw  = rec.get("Vibration", rec.get("vibration", "NO"))
+
+                # Normalise to "YES" / "NO" regardless of what the sheet stores
+                vib_str = str(vib_raw).strip().upper()
+                if vib_str in ("YES", "1", "TRUE"):
+                    vibration_display = "YES"
+                elif vib_str in ("NO", "0", "FALSE", ""):
+                    vibration_display = "NO"
+                else:
+                    vibration_display = vib_str
+
+                try:
+                    distance = float(dist_raw)
+                except (ValueError, TypeError):
+                    distance = 0.0
+
+                result.append({
+                    "date":      date,
+                    "latitude":  lat,
+                    "longitude": lon,
+                    "vibration": vibration_display,
+                    "distance":  distance,
+                })
+            except Exception as row_err:
+                logging.warning(f"Skipping bad row: {row_err}")
+                continue
+
+        return result
+
+    except Exception as e:
+        logging.warning(f"read_accidents_from_sheets error: {e}")
+        # Force re-init next call in case the session expired
+        worksheet = None
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Email alert helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def send_accident_alert_email(accident):
+    """
+    Send an alert email when an accident is detected.
+    Called in a daemon thread from analyze_sensor_data() so it never blocks
+    the HTTP response back to the IoT sensor.
+    """
+    try:
+        sender_email = "madhukaishani123@gmail.com"
+        receiver_email = "ishanimadhuka12345@gmail.com"
+        app_password = "ejhtatmzqwkhqvyl"
+
+        severity = accident.get("severity", "unknown").upper()
+        device_id = accident.get("device_id", "N/A")
+        latitude = accident.get("latitude", "N/A")
+        longitude = accident.get("longitude", "N/A")
+        timestamp = accident.get("timestamp", datetime.now().isoformat())
+        distance = accident.get("distance", "N/A")
+        vibration = accident.get("vibration", "N/A")
+
+        msg = EmailMessage()
+        msg["Subject"] = f"🚨 Accident Detected! Severity: {severity}"
+        msg["From"] = sender_email
+        msg["To"] = receiver_email
+        msg.set_content(
+            f"An accident has been detected by the IoT sensor system.\n\n"
+            f"─────────────────────────────\n"
+            f"Device ID   : {device_id}\n"
+            f"Severity    : {severity}\n"
+            f"Timestamp   : {timestamp}\n"
+            f"Latitude    : {latitude}\n"
+            f"Longitude   : {longitude}\n"
+            f"Distance    : {distance} cm\n"
+            f"Vibration   : {'YES' if vibration else 'NO'}\n"
+            f"─────────────────────────────\n\n"
+            f"Please check the dashboard for more details.\n"
+        )
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender_email, app_password)
+            server.send_message(msg)
+
+        logging.info("✅ Accident alert email sent to %s", receiver_email)
+
+    except Exception as e:
+        logging.error("❌ Failed to send accident alert email: %s", e)
+        logging.debug(traceback.format_exc())
 
 
 class MLAccidentDetector:
@@ -227,120 +385,158 @@ class MLAccidentDetector:
         self.device_last_accident = {}
         self.running = True
 
-    def predict_with_ml(self, distance, impact_detected, total_impacts):
+    def predict_with_ml(self, distance, vibration):
         if not all([model_distance, model_impact, model_alert]):
             return None
+
         try:
+            impact_detected = 1 if float(vibration) > 5 else 0
+            total_impacts = 1
+
             features = [[distance, impact_detected, total_impacts]]
+
             prediction = {
-                'distance_violation': int(model_distance.predict(features)[0]),
-                'impact_detected': int(model_impact.predict(features)[0]),
-                'alert_level': int(model_alert.predict(features)[0])
+                "distance_violation": int(model_distance.predict(features)[0]),
+                "impact_detected": int(model_impact.predict(features)[0]),
+                "alert_level": int(model_alert.predict(features)[0]),
             }
-            alert_levels = {0: 'NORMAL', 1: 'LOW', 2: 'MEDIUM', 3: 'HIGH', 4: 'CRITICAL'}
-            prediction['alert_level_text'] = alert_levels.get(prediction['alert_level'], 'UNKNOWN')
+
+            alert_levels = {
+                0: "NORMAL",
+                1: "LOW",
+                2: "MEDIUM",
+                3: "HIGH",
+                4: "CRITICAL"
+            }
+
+            prediction["alert_level_text"] = alert_levels.get(
+                prediction["alert_level"], "UNKNOWN"
+            )
+
             return prediction
+
         except Exception as e:
             logging.warning(f"ML Prediction error: {e}")
             return None
 
-    def analyze_sensor_data(self, device_id, distance, impact_detected, total_impacts, location, timestamp):
-        ml_pred = self.predict_with_ml(distance, impact_detected, total_impacts)
-        if ml_pred:
-            ml_predictions.append({
-                'device_id': device_id,
-                'timestamp': timestamp,
-                'input': {'distance': distance, 'impact': impact_detected, 'total_impacts': total_impacts},
-                'prediction': ml_pred
-            })
-            if len(ml_predictions) > 500:
-                ml_predictions.pop(0)
-        is_accident = ml_pred and (ml_pred['impact_detected'] == 1 or ml_pred['alert_level'] >= 2)
-        if not is_accident:
-            return None
-        if device_id in self.device_last_accident:
-            last_time = self.device_last_accident[device_id]
-            time_diff = (datetime.now() - last_time).total_seconds()
-            if time_diff < ACCIDENT_COOLDOWN:
+    def analyze_sensor_data(self, record):
+        """
+        Analyze incoming IoT sensor data, detect accidents, create alerts,
+        and automatically send an email when an accident is confirmed.
+        """
+        try:
+            device_id = record.get('device_id')
+            distance = float(record.get('distance', 0))
+            vibration = int(record.get('impact_detected', 0))
+            timestamp = record.get('timestamp', datetime.now().isoformat())
+
+            location = record.get('location', '')
+
+            latitude = ""
+            longitude = ""
+
+            if location and ',' in location:
+                try:
+                    lat_str, lon_str = location.split(',', 1)
+                    latitude = lat_str.strip()
+                    longitude = lon_str.strip()
+                except ValueError:
+                    latitude = ""
+                    longitude = ""
+
+            ml_pred = self.predict_with_ml(distance, vibration)
+
+            if ml_pred:
+                ml_predictions.append({
+                    "device_id": device_id,
+                    "timestamp": timestamp,
+                    "input": {
+                        "distance": distance,
+                        "vibration": vibration
+                    },
+                    "prediction": ml_pred
+                })
+
+                if len(ml_predictions) > 500:
+                    ml_predictions.pop(0)
+
+            is_accident = (
+                ml_pred and (
+                    ml_pred["impact_detected"] == 1 or
+                    ml_pred["alert_level"] >= 2
+                )
+            )
+
+            if not is_accident:
                 return None
-        severity_map = {0: 'low', 1: 'low', 2: 'medium', 3: 'high', 4: 'critical'}
-        severity = severity_map.get(ml_pred['alert_level'], 'medium')
-        accident = {
-            'id': f"acc_{device_id}_{int(time.time())}",
-            'device_id': device_id,
-            'distance': distance,
-            'impact_detected': impact_detected,
-            'total_impacts': total_impacts,
-            'severity': severity,
-            'location': location,
-            'timestamp': timestamp,
-            'status': 'detected',
-            'confirmed': False,
-            'ml_prediction': ml_pred
-        }
-        self.accident_log.append(accident)
-        self.device_last_accident[device_id] = datetime.now()
-        alert = {
-            'id': f"alert_{device_id}_{int(time.time())}",
-            'type': 'accident',
-            'title': f"🚨 Accident Detected - {severity.upper()}",
-            'message': f"ML Model detected accident at {location}. Distance: {distance}cm, Impact: {impact_detected}, Total Impacts: {total_impacts}",
-            'severity': severity,
-            'device_id': device_id,
-            'location': location,
-            'timestamp': datetime.now().isoformat(),
-            'read': False,
-            'accident_id': accident['id']
-        }
-        alerts.append(alert)
-        if len(alerts) > 100:
-            alerts.pop(0)
-        if worksheet:
-            try:
-                row = [
-                    timestamp,
-                    device_id,
-                    distance,
-                    'YES' if impact_detected else 'NO',
-                    'YES' if ml_pred['distance_violation'] else 'NO',
-                    total_impacts,
-                    0,
-                    timestamp,
-                    0,
-                    0,
-                    'Active',
-                    ml_pred['alert_level_text']
-                ]
-                worksheet.append_row(row)
-            except Exception as e:
-                logging.warning(f"Error logging to Google Sheets: {e}")
-        return accident
 
+            if device_id in self.device_last_accident:
+                last_time = self.device_last_accident[device_id]
+                if (datetime.now() - last_time).total_seconds() < ACCIDENT_COOLDOWN:
+                    return None
 
-# Instantiate detector (historical load will run after sheets handler is available)
+            severity_map = {
+                0: "low",
+                1: "low",
+                2: "medium",
+                3: "high",
+                4: "critical"
+            }
+
+            severity = severity_map.get(ml_pred["alert_level"], "medium")
+
+            accident = {
+                "id": f"acc_{device_id}_{int(time.time())}",
+                "device_id": device_id,
+                "distance": distance,
+                "vibration": vibration,
+                "severity": severity,
+                "latitude": latitude,
+                "longitude": longitude,
+                "timestamp": timestamp,
+                "status": "detected",
+                "confirmed": False,
+                "ml_prediction": ml_pred
+            }
+
+            self.accident_log.append(accident)
+            self.device_last_accident[device_id] = datetime.now()
+
+            alert = {
+                "id": f"alert_{device_id}_{int(time.time())}",
+                "type": "accident",
+                "title": f"🚨 Accident Detected - {severity.upper()}",
+                "message": f"Location: {latitude}, {longitude} | Distance: {distance} cm | Vibration: {'YES' if vibration else 'NO'}",
+                "severity": severity,
+                "timestamp": datetime.now().isoformat(),
+                "read": False
+            }
+
+            accident_alerts.append(alert)
+
+            if len(accident_alerts) > 100:
+                accident_alerts.pop(0)
+
+            # Send email in background thread so it doesn't block IoT response
+            email_thread = threading.Thread(
+                target=send_accident_alert_email,
+                args=(accident,),
+                daemon=True
+            )
+            email_thread.start()
+
+            return accident
+
+        except Exception as e:
+            logging.warning(f"Analyze error: {e}")
+            return None
+
+        
+# Instantiate detector
 detector = MLAccidentDetector()
 
 
-def get_sheets_handler():
-    global sheets_handler
-    if sheets_handler is None:
-        try:
-            # Ensure SERVICE_ACCOUNT_CREDS env is set to a sensible default if a local creds file exists
-            creds_default = os.getenv('SERVICE_ACCOUNT_CREDS') or str(Path(__file__).parent.parent / 'keys' / 'credentials.json')
-            if not os.getenv('SERVICE_ACCOUNT_CREDS') and os.path.exists(creds_default):
-                os.environ['SERVICE_ACCOUNT_CREDS'] = creds_default
-                logging.info(f"SERVICE_ACCOUNT_CREDS was not set; using default: {creds_default}")
-
-            sheets_handler = GoogleSheetsHandler()
-        except Exception as e:
-            logging.warning(f"GoogleSheetsHandler init failed: {e}")
-            logging.debug(traceback.format_exc())
-            return None
-    return sheets_handler
-
-# After sheets handler is available, attempt to load historical records into detector
 try:
-    # Initialize sheets_handler variable so endpoints can use it
     sheets_handler = get_sheets_handler()
     load_accidents_from_sheets(detector)
 except Exception:
@@ -351,7 +547,6 @@ def process_video_in_background():
     try:
         video_path = current_session['current_video']
         
-        # Open video file
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print(f"[ERROR] Cannot open video file: {video_path}")
@@ -377,20 +572,16 @@ def process_video_in_background():
             current_session['frame_count'] = frame_count
             
             try:
-                # Detect vehicles (like main.py does)
                 detections = speed_detector.detect_vehicles(frame)
                 tracks = speed_detector.tracker.update_tracks(detections, frame=frame)
                 active_ids = speed_detector.process_tracks(tracks, frame)
                 
-                # Run ANPR detection
                 plates_data = anpr_detector.detect_and_read(frame, draw_results=False)
                 if isinstance(plates_data, tuple):
                     plates_data = plates_data[0]
                 
-                # Get current tracks
                 current_tracks = speed_detector.get_current_tracks()
                 
-                # Update integrator with tracking data
                 if current_tracks and isinstance(current_tracks, dict):
                     for track_id, track_data in current_tracks.items():
                         bbox = track_data.get('bbox')
@@ -398,11 +589,9 @@ def process_video_in_background():
                         if bbox:
                             integrator.update_vehicle_tracking(track_id, bbox, speed)
                 
-                # Link plates to vehicles
                 if plates_data and isinstance(plates_data, list):
                     integrator.link_plates_to_vehicles(plates_data)
                 
-                # Safety detection
                 if current_tracks and isinstance(current_tracks, dict):
                     for track_id, track_data in current_tracks.items():
                         speed = track_data.get('speed')
@@ -410,11 +599,10 @@ def process_video_in_background():
                         
                         if speed is not None and bbox is not None:
                             safety_detector.update_vehicle_state(track_id, bbox, speed)
-                    
-                alerts = safety_detector.process_frame(current_tracks)
+                
+                safety_alerts = safety_detector.process_frame(current_tracks)
                 print(f"[INFO] Processed {frame_count} frames, {len(integrator.get_violations())} violations")
                 
-                # Process every 2nd frame to speed up
                 if frame_count % 2 == 0:
                     continue
                     
@@ -422,7 +610,6 @@ def process_video_in_background():
                 print(f"[ERROR] Frame {frame_count} processing failed: {frame_error}")
                 import traceback
                 traceback.print_exc()
-                # Continue with next frame instead of stopping
                 continue
             if current_session['frame_count'] % 3 != 0:
                 continue
@@ -437,8 +624,6 @@ def process_video_in_background():
 @app.route('/')
 def home():
     return jsonify({"message": "Traffic Management API is running!"})
-
-# Traffic Detection Endpoints
 
 @app.route('/api/detection/status', methods=['GET'])
 def get_detection_status():
@@ -463,7 +648,6 @@ def get_vehicles():
     try:
         vehicles = current_session['integrator'].get_all_vehicles()
         
-        # Convert to JSON-friendly format
         vehicle_list = []
         for track_id, data in vehicles.items():
             vehicle_list.append({
@@ -490,7 +674,6 @@ def get_vehicles():
         }), 500
 
 
-# Ingest parking record(s) (JSON)
 @app.route('/api/ingest-parking', methods=['POST'])
 def ingest_parking():
     try:
@@ -511,7 +694,7 @@ def ingest_parking():
                 except Exception:
                     dval = 9999
                 rec['Status'] = 'OCCUPIED' if dval < 200 else 'VACANT'
-##
+
             parking_records_in_memory.append(rec)
             if len(parking_records_in_memory) > PARKING_MEMORY_MAX:
                 parking_records_in_memory.pop(0)
@@ -557,109 +740,115 @@ def get_detection_violations():
         }), 500
 
 
-# --- ML / Accident detection endpoints (from Ishani branch) ---
 @app.route('/api/sensor-data', methods=['POST'])
 def receive_sensor_data():
-    """Receive sensor data from IoT devices (ESP32)"""
+    """
+    Receive live sensor data from IoT device.
+    Stores vibration as YES/NO string matching Google Sheets format.
+    """
     try:
         data = request.get_json()
-        required_fields = ['device_id', 'distance', 'location']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"success": False, "error": f"Missing required field: {field}"}), 400
 
-        device_id = data['device_id']
-        distance = float(data['distance'])
-        impact_detected = int(data.get('impact_detected', 0))
-        total_impacts = int(data.get('total_impacts', 0))
-        location = data['location']
+        print("🔥 RECEIVED:", data)
+
+        device_id = data.get('device_id')
+        distance = float(data.get('distance', 0))
+        location = data.get('location', '')
+        vibration = int(data.get('impact_detected', 0))
         timestamp = data.get('timestamp', datetime.now().isoformat())
 
-        connected_devices[device_id] = {
-            'device_id': device_id,
-            'location': location,
-            'status': 'online',
-            'last_seen': datetime.now().isoformat(),
-            'distance': distance,
-            'impact_detected': impact_detected,
-            'total_impacts': total_impacts
+        latitude = data.get('latitude', '')
+        longitude = data.get('longitude', '')
+        
+        print(f"📍 Initial - latitude: '{latitude}', longitude: '{longitude}', location: '{location}'")
+        
+        if (not latitude and not longitude) and location and ',' in location:
+            try:
+                parts = location.split(',', 1)
+                if len(parts) == 2:
+                    latitude = parts[0].strip()
+                    longitude = parts[1].strip()
+                    print(f"✅ Parsed location - latitude: '{latitude}', longitude: '{longitude}'")
+            except Exception as e:
+                print(f"❌ Error parsing location: {e}")
+                latitude = ''
+                longitude = ''
+
+        vibration_display = "YES" if vibration == 1 else "NO"
+
+        record = {
+            "date": timestamp,
+            "Latitude": latitude,
+            "Longitude": longitude,
+            "Vibration": vibration_display,
+            "Distance": distance
         }
 
-        accident = detector.analyze_sensor_data(device_id, distance, impact_detected, total_impacts, location, timestamp)
-##
-        if accident:
-            accident['confirmed'] = True
-            try:
-                send_accident_alert(accident)
-            except Exception as e:
-                logging.warning(f"Failed to send email alert: {e}")
+        accident_records.append({
+            "date": timestamp,
+            "latitude": latitude,
+            "longitude": longitude,
+            "vibration": vibration_display,
+            "distance": distance
+        })
+
+        print("✅ SAVED RECORD:", record)
+        print("📊 TOTAL:", len(accident_records))
+
+        if sheets_handler:
+            sheets_handler.append_accident_record(record)
+
+        # Run ML accident analysis (email is sent inside if accident detected)
+        detector.analyze_sensor_data({
+            "device_id": device_id,
+            "distance": distance,
+            "impact_detected": vibration,
+            "timestamp": timestamp,
+            "location": location,
+            "latitude": latitude,
+            "longitude": longitude,
+        })
 
         return jsonify({
             "success": True,
-            "message": "Sensor data received and analyzed",
-            "accident_detected": accident is not None,
-            "accident": accident
+            "record": record,
+            "total": len(accident_records)
         })
 
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-                
-
-        return jsonify({
-            "success": True,
-            "message": "Sensor data received and analyzed",
-            "accident_detected": accident is not None,
-            "accident": accident
-        })
-    except Exception as e:
+        print("❌ ERROR:", e)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# UPDATED: /api/accidents now calls read_accidents_from_sheets() on every
+# request instead of returning the stale in-memory accident_records list.
+# This means the frontend always gets the latest rows from Google Sheets,
+# including rows written directly by the IoT device, on every 5-second poll.
+# ─────────────────────────────────────────────────────────────────────────────
 @app.route('/api/accidents', methods=['GET'])
 def get_accidents():
-    """Get all accidents"""
+    """Get all accident records — re-read from Google Sheets on every call."""
     try:
-        hours = request.args.get('hours', type=int, default=24)
-        cutoff = datetime.now() - timedelta(hours=hours)
-        filtered = []
-        for a in detector.accident_log:
-            try:
-                timestamp_str = a.get('timestamp', '')
-                if not timestamp_str:
-                    continue
-                try:
-                    ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                except:
-                    try:
-                        ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-                    except:
-                        filtered.append(a)
-                        continue
-                if ts > cutoff:
-                    filtered.append(a)
-            except Exception as e:
-                logging.warning(f"Error filtering accident: {e}")
-                continue
-
-        severity_counts = {'low': 0, 'medium': 0, 'high': 0, 'critical': 0}
-        for acc in filtered:
-            severity = acc.get('severity', 'low')
-            if severity in severity_counts:
-                severity_counts[severity] += 1
+        live_records = read_accidents_from_sheets()
 
         return jsonify({
             "success": True,
-            "accidents": filtered,
-            "total_count": len(filtered),
-            "severity_counts": severity_counts,
+            "accidents": live_records,
+            "total_count": len(live_records),
             "timestamp": datetime.now().isoformat()
         })
+
     except Exception as e:
         logging.error(f"Error in get_accidents: {e}")
         import traceback
         logging.error(traceback.format_exc())
-        return jsonify({"success": False, "error": str(e)}), 500
+
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "accidents": []
+        }), 500
 
 
 @app.route('/api/alerts', methods=['GET'])
@@ -667,10 +856,14 @@ def get_alerts():
     """Get alerts"""
     try:
         unread_only = request.args.get('unread_only', 'false').lower() == 'true'
-        filtered_alerts = alerts
+        filtered_alerts = accident_alerts
         if unread_only:
-            filtered_alerts = [a for a in alerts if not a['read']]
-        return jsonify({"success": True, "alerts": filtered_alerts, "unread_count": len([a for a in alerts if not a['read']])})
+            filtered_alerts = [a for a in accident_alerts if not a['read']]
+        return jsonify({
+            "success": True,
+            "alerts": filtered_alerts,
+            "unread_count": len([a for a in accident_alerts if not a['read']])
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -694,15 +887,15 @@ def get_statistics():
         recent_accidents = []
         for a in detector.accident_log:
             try:
-                timestamp_str = a.get('timestamp', '')
+                timestamp_str = a.get('date') or a.get('timestamp', '')
                 if not timestamp_str:
                     continue
                 try:
                     ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                except:
+                except Exception:
                     try:
                         ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         continue
                 if ts > last_24h:
                     recent_accidents.append(a)
@@ -713,7 +906,7 @@ def get_statistics():
         stats = {
             "total_accidents": len(detector.accident_log),
             "accidents_last_24h": len(recent_accidents),
-            "active_alerts": len([a for a in alerts if not a['read']]),
+            "active_alerts": len([a for a in accident_alerts if not a['read']]),
             "connected_devices": len(connected_devices),
             "ml_models_active": all([model_distance, model_impact, model_alert]),
             "total_predictions": len(ml_predictions)
@@ -736,7 +929,6 @@ def get_devices():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-
 @app.route('/api/detection/safety-alerts', methods=['GET'])
 def get_safety_alerts():
     """Get safety alerts from current session"""
@@ -750,7 +942,7 @@ def get_safety_alerts():
         alerts = current_session['safety_detector'].alerts
         
         alert_list = []
-        for alert in alerts[-100:]:  # Last 100 alerts
+        for alert in alerts[-100:]:
             alert_list.append({
                 'type': alert['type'],
                 'severity': alert['severity'],
@@ -779,14 +971,12 @@ def start_detection():
         data = request.json
         video_path = data.get('video_path')
         
-        # Validate video path
         if not video_path:
             return jsonify({
                 "success": False,
                 "error": "No video path provided"
             }), 400
         
-        # Convert relative path to absolute path from project root
         if not os.path.isabs(video_path):
             project_root = Path(__file__).parent.parent
             video_path = str(project_root / video_path)
@@ -798,7 +988,6 @@ def start_detection():
                 "error": f"Video file not found: {video_path}"
             }), 400
         
-        # Test if OpenCV can open the video
         test_cap = cv2.VideoCapture(video_path)
         if not test_cap.isOpened():
             test_cap.release()
@@ -808,13 +997,11 @@ def start_detection():
             }), 400
         test_cap.release()
         
-        # Stop any existing processing
         if current_session['is_processing']:
             current_session['is_processing'] = False
             if current_session['processing_thread']:
                 current_session['processing_thread'].join(timeout=2)
         
-        # Initialize fresh session
         print(f"[INFO] Initializing detection session for: {video_path}")
         
         try:
@@ -825,11 +1012,9 @@ def start_detection():
             current_session['safety_detector'] = SafetyEventDetector()
             
             print(f"[INFO] Creating VehicleSpeedDetector with video: {video_path}")
-            # Initialize speed detector in headless mode (no GUI windows)
             current_session['speed_detector'] = VehicleSpeedDetector(headless=True)
             
             print("[INFO] Creating NumberPlateDetector...")
-            # Initialize ANPR detector with required model_path
             anpr_model_path = str(Path(__file__).parent.parent / "models" / "number_plate_yolo.pt")
             current_session['anpr_detector'] = NumberPlateDetector(
                 model_path=anpr_model_path,
@@ -853,7 +1038,6 @@ def start_detection():
         current_session['current_video'] = video_path
         current_session['frame_count'] = 0
         
-        # Start processing in background thread
         thread = threading.Thread(target=process_video_in_background, daemon=True)
         thread.start()
         current_session['processing_thread'] = thread
@@ -879,7 +1063,6 @@ def stop_detection():
     try:
         current_session['is_processing'] = False
         
-        # Wait for thread to finish
         if current_session['processing_thread']:
             current_session['processing_thread'].join(timeout=3)
         
@@ -948,7 +1131,7 @@ def export_detection_data():
     
     try:
         data = request.json
-        export_format = data.get('format', 'csv')  # csv, json, violations
+        export_format = data.get('format', 'csv')
         
         vehicles = current_session['integrator'].get_all_vehicles()
         exporter = ResultExporter()
@@ -977,13 +1160,10 @@ def export_detection_data():
         }), 500
 
 
-# Google Sheets / Historical Data Endpoints
-
 @app.route('/api/violations/history', methods=['GET'])
 def get_violation_history():
     """Get historical violations from Google Sheets"""
     try:
-        # Get recent violations (last 24 hours)
         since_time = datetime.now() - timedelta(days=1)
         violations = sheets_handler.get_violations_since(since_time)
         
@@ -998,8 +1178,8 @@ def get_violation_history():
             "success": False,
             "error": str(e),
             "violations": []
-        }), 200  # Still return 200 to avoid frontend errors
-##
+        }), 200
+
 
 def _get_parking_data():
     if parking_records_in_memory:
@@ -1029,7 +1209,6 @@ def get_parking_status():
             "parking_data": []
         }), 200
 
-# Add /api/parking-data for compatibility with devinda branch
 @app.route('/api/parking-data', methods=['GET'])
 def get_parking_data():
     try:
@@ -1049,16 +1228,12 @@ def get_parking_data():
 @app.route('/api/system/overview', methods=['GET'])
 def get_system_overview():
     """Get complete system overview"""
-    ##
     try:
-         # Get parking data       
         parking_data = _get_parking_data()
         occupied = sum(1 for p in parking_data if (p.get('status') or p.get('Status') or '').upper() == 'OCCUPIED')
         
-        # Get detection status
         detection_active = current_session.get('is_processing', False)
         
-        # Get recent violations
         since_time = datetime.now() - timedelta(hours=1)
         recent_violations = sheets_handler.get_violations_since(since_time)
         
@@ -1109,24 +1284,6 @@ def internal_error(error):
     }), 500
 
 
-# Error Handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "success": False,
-        "error": "Endpoint not found"
-    }), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        "success": False,
-        "error": "Internal server error"
-    }), 500
-
-
-# Mark an action (dispatch or resolve) against a device/record
 @app.route('/api/mark-action', methods=['POST'])
 def mark_action():
     try:
@@ -1134,7 +1291,6 @@ def mark_action():
         if not payload:
             return jsonify({"success": False, "error": "No JSON payload provided"}), 400
 
-        # Accept single or list
         actions = payload if isinstance(payload, list) else [payload]
         appended = 0
         for act in actions:
@@ -1145,43 +1301,6 @@ def mark_action():
         return jsonify({"success": True, "appended": appended}), 201
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-##
-# --- Email alert function ---
-def send_accident_alert(accident):
-    """Send an alert email when an accident is detected.
-
-    The function logs its activity and swallows exceptions so callers
-    don't crash the request handler.
-    """
-    try:
-        sender_email = "madhukaishani123@gmail.com"
-        receiver_email = "ishanimadhuka12345@gmail.com"
-        app_password = "ejhtatmzqwkhqvyl"  
-
-        msg = EmailMessage()
-        msg["Subject"] = "🚨 Accident Detected!"
-        msg["From"] = sender_email
-        msg["To"] = receiver_email
-        msg.set_content(
-            f"An accident has been detected!\n\n"
-            f"Device ID: {accident['device_id']}\n"
-            f"Location: {accident['location']}\n"
-            f"Timestamp: {accident['timestamp']}\n"
-            f"Distance: {accident['distance']}\n"
-            f"Distance: {accident['distance']}\n"
-            f"Impact Detected: {accident['impact_detected']}\n"
-            f"Total Impacts: {accident['total_impacts']}"
-        )
-
-        # Send email via Gmail SMTP
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(sender_email, app_password)
-            server.send_message(msg)
-        logging.info("✅ Accident alert email sent to %s", receiver_email)
-    except Exception as e:
-        logging.error("Failed to send accident alert email: %s", e)
-        logging.debug(traceback.format_exc())
 
 
 if __name__ == '__main__':
@@ -1190,4 +1309,30 @@ if __name__ == '__main__':
     logging.info(f"Google Sheets connected: {worksheet is not None}")
     app.run(debug=True, host='0.0.0.0', port=8000)
 
-    
+@app.route('/api/sheets/test', methods=['GET'])
+def test_sheets():
+    try:
+        if sheets_handler is None:
+            return jsonify({
+                "success": False,
+                "message": "Sheets handler is None"
+            })
+
+        return jsonify({
+            "success": True,
+            "message": "Sheets connected",
+            "sheet_name": sheets_handler.sheet.title
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
+        
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    return jsonify({
+        "success": True,
+        "message": "Backend is working"
+    })
