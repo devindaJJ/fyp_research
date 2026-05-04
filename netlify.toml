@@ -1,5 +1,5 @@
 [build]
-  base = "fyp_research/frontend/traffic-dashboard"
+  base = "frontend/traffic-dashboard"
   command = "npm run build"
   publish = "dist"
 
