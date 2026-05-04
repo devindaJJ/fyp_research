@@ -11,6 +11,9 @@ import traceback
 import datetime
 import queue
 import pandas as pd
+import gspread
+import smtplib
+from email.message import EmailMessage
 
 from fastapi import FastAPI
 from pydantic import BaseModel
