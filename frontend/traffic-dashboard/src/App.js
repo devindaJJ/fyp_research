@@ -7,7 +7,7 @@ import ParkingDetails from './ParkingDetails';
 import Analytics from './Analytics';
 import './App.css';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = `${import.meta.env.VITE_API_BASE_URL}/api`;
 
 function App() {
   const [parkingData, setParkingData] = useState([]);
