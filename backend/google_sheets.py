@@ -27,15 +27,10 @@ class GoogleSheetsHandler:
         if not os.path.exists(creds_path):
             raise FileNotFoundError(f"credentials.json not found: {creds_path}")
 
-        creds = Credentials.from_service_account_file(
-            creds_path,
-            scopes=scope
-        )
-
+        creds = Credentials.from_service_account_file(creds_path, scopes=scope)
         self.client = gspread.authorize(creds)
 
         spreadsheet_id = os.getenv("SHEET_ID")
-
         if not spreadsheet_id:
             spreadsheet_id = "1bJKg407L6pQ6TA5aKDY9JZd5s-5ICCdmflZB6BEJbZE"
 
@@ -50,21 +45,19 @@ class GoogleSheetsHandler:
 
     def ensure_accident_headers(self):
         headers = ["date", "Latitude", "Longitude", "Vibration", "Distance"]
-
         values = self.sheet.get_all_values()
 
         if not values:
-            # Sheet is completely empty — safe to insert headers
             self.sheet.append_row(headers)
-
         elif values[0] != headers:
-            # FIX: Original code deleted row 1 unconditionally and reinserted headers,
-            # which destroyed any real data sitting in row 1 if the header row was
-            # missing or mismatched. Now we only insert the header row at position 1
-            # without deleting anything, which pushes existing rows down safely.
+            # Only insert header row without deleting existing data
             self.sheet.insert_row(headers, 1)
 
     def append_accident_record(self, record):
+        """
+        Append a new accident row to AccidentLogs sheet.
+        Expects keys: date, Latitude, Longitude, Vibration, Distance
+        """
         try:
             row = [
                 record.get("date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -75,30 +68,48 @@ class GoogleSheetsHandler:
             ]
             self.sheet.append_row(row, value_input_option="USER_ENTERED")
             return True
-
         except Exception as e:
             print(f"Error appending accident record: {e}")
             return False
 
     def get_accident_records(self):
+        """
+        Read all rows from AccidentLogs.
+        Returns list of dicts with keys: date, latitude, longitude, vibration, distance
+        NOTE: uses lowercase internal keys to match the rest of the backend.
+        """
         try:
             records = self.sheet.get_all_records()
-
             result = []
             for record in records:
+                vib_raw = record.get("Vibration", record.get("vibration", "NO"))
+                vib_str = str(vib_raw).strip().upper()
+                if vib_str in ("YES", "1", "TRUE"):
+                    vibration_display = "YES"
+                elif vib_str in ("NO", "0", "FALSE", ""):
+                    vibration_display = "NO"
+                else:
+                    vibration_display = vib_str
+
+                try:
+                    distance = float(record.get("Distance", record.get("distance", 0)) or 0)
+                except (ValueError, TypeError):
+                    distance = 0.0
+
+                # FIX: key is "date" (not "timestamp") — matches sheet header and frontend expectation
                 result.append({
-                    "timestamp": record.get("date", ""),
-                    "latitude": record.get("Latitude", ""),
-                    "longitude": record.get("Longitude", ""),
-                    "vibration": record.get("Vibration", ""),
-                    "distance": record.get("Distance", "")
+                    "date":      str(record.get("date", record.get("Date", ""))),
+                    "latitude":  str(record.get("Latitude",  record.get("latitude",  "")) or ""),
+                    "longitude": str(record.get("Longitude", record.get("longitude", "")) or ""),
+                    "vibration": vibration_display,
+                    "distance":  distance,
                 })
-
             return result
-
         except Exception as e:
             print(f"Error reading accident records: {e}")
             return []
+
+    # ─── Parking helpers ──────────────────────────────────────────────────────
 
     def get_parking_data(self):
         try:
@@ -112,8 +123,8 @@ class GoogleSheetsHandler:
 
             for record in records:
                 timestamp = record.get("Timestamp") or record.get("Time") or record.get("time")
-                distance = record.get("Distance") or record.get("Distance_cm") or record.get("distance")
-                status = record.get("Status") or record.get("status") or ""
+                distance  = record.get("Distance")  or record.get("Distance_cm") or record.get("distance")
+                status    = record.get("Status")    or record.get("status") or ""
 
                 if not timestamp or distance is None:
                     continue
@@ -124,21 +135,21 @@ class GoogleSheetsHandler:
                     distance_val = 0.0
 
                 processed_data.append({
-                    'timestamp': timestamp,
-                    'distance': distance_val,
-                    'status': status,
-                    'location': record.get('Location') or record.get('location') or 'Unknown',
-                    'device_id': record.get('Device_ID') or record.get('DeviceId') or record.get('device') or None,
-                    'rssi': record.get('RSSI_dBm') or record.get('rssi') or None,
-                    'latitude': record.get('Latitude') or record.get('lat') or None,
-                    'longitude': record.get('Longitude') or record.get('lon') or None,
-                    'raw': record
+                    'timestamp':  timestamp,
+                    'distance':   distance_val,
+                    'status':     status,
+                    'location':   record.get('Location') or record.get('location') or 'Unknown',
+                    'device_id':  record.get('Device_ID') or record.get('DeviceId') or record.get('device') or None,
+                    'rssi':       record.get('RSSI_dBm') or record.get('rssi') or None,
+                    'latitude':   record.get('Latitude') or record.get('lat') or None,
+                    'longitude':  record.get('Longitude') or record.get('lon') or None,
+                    'raw':        record
                 })
 
             return processed_data[-50:]
-        
+
         except Exception as e:
-            print(f"Error reading Google Sheets: {e}")
+            print(f"Error reading parking data from Google Sheets: {e}")
             return []
 
     def get_violations_since(self, since_time):
@@ -148,12 +159,12 @@ class GoogleSheetsHandler:
             except Exception:
                 sheet = self.sheet
 
-            records = sheet.get_all_records()
+            records   = sheet.get_all_records()
             violations = []
 
             for record in records:
-                status = record.get("Status") or record.get("status") or ""
-                distance = record.get("Distance") or record.get("Distance_cm") or record.get("distance")
+                status    = record.get("Status")   or record.get("status") or ""
+                distance  = record.get("Distance") or record.get("Distance_cm") or record.get("distance")
                 timestamp = record.get("Timestamp") or record.get("Time") or None
 
                 try:
@@ -173,10 +184,10 @@ class GoogleSheetsHandler:
                     if record_time >= since_time:
                         violations.append({
                             "timestamp": timestamp,
-                            "location": record.get("Location") or record.get("location") or "Unknown",
-                            "distance": distance_val,
+                            "location":  record.get("Location") or record.get("location") or "Unknown",
+                            "distance":  distance_val,
                             "device_id": record.get("Device_ID") or record.get("device") or None,
-                            "priority": "HIGH" if distance_val < 5 else "MEDIUM"
+                            "priority":  "HIGH" if distance_val < 5 else "MEDIUM"
                         })
 
             return violations
@@ -193,14 +204,13 @@ class GoogleSheetsHandler:
                 sheet = self.sheet
 
             records = sheet.get_all_records()
-
             if not records:
                 return {}
 
             df = pd.DataFrame(records)
 
             total_records = len(df)
-            status_col = "Status" if "Status" in df.columns else ("status" if "status" in df.columns else None)
+            status_col   = "Status"   if "Status"   in df.columns else ("status"   if "status"   in df.columns else None)
             distance_col = "Distance" if "Distance" in df.columns else (
                 "Distance_cm" if "Distance_cm" in df.columns else (
                     "distance" if "distance" in df.columns else None
@@ -209,10 +219,9 @@ class GoogleSheetsHandler:
 
             if status_col:
                 available_spots = len(df[df[status_col] == "AVAILABLE"])
-                occupied_spots = len(df[df[status_col] == "OCCUPIED"])
+                occupied_spots  = len(df[df[status_col] == "OCCUPIED"])
             else:
-                available_spots = 0
-                occupied_spots = 0
+                available_spots = occupied_spots = 0
 
             if status_col and distance_col:
                 violation_count = len(
@@ -222,10 +231,10 @@ class GoogleSheetsHandler:
                 violation_count = 0
 
             return {
-                "total_records": total_records,
-                "available_spots": available_spots,
-                "occupied_spots": occupied_spots,
-                "violation_count": violation_count,
+                "total_records":    total_records,
+                "available_spots":  available_spots,
+                "occupied_spots":   occupied_spots,
+                "violation_count":  violation_count,
                 "utilization_rate": round((occupied_spots / total_records) * 100, 2) if total_records > 0 else 0
             }
 
@@ -236,17 +245,17 @@ class GoogleSheetsHandler:
     def get_device_health(self):
         return [
             {
-                "device_id": "SN-001",
-                "location": "Main Gate A1",
-                "status": "online",
-                "battery": 85,
+                "device_id":   "SN-001",
+                "location":    "Main Gate A1",
+                "status":      "online",
+                "battery":     85,
                 "last_update": datetime.now().isoformat()
             },
             {
-                "device_id": "SN-002",
-                "location": "Street B2",
-                "status": "offline",
-                "battery": 15,
+                "device_id":   "SN-002",
+                "location":    "Street B2",
+                "status":      "offline",
+                "battery":     15,
                 "last_update": (datetime.now() - timedelta(hours=3)).isoformat()
             }
         ]
@@ -256,43 +265,29 @@ class GoogleSheetsHandler:
             try:
                 sheet = self.spreadsheet.worksheet("ParkingLogs")
             except Exception:
-                sheet = self.spreadsheet.add_worksheet(
-                    title="ParkingLogs",
-                    rows="2000",
-                    cols="20"
-                )
+                sheet = self.spreadsheet.add_worksheet(title="ParkingLogs", rows="2000", cols="20")
 
             headers = [
-                "Time",
-                "Device_ID",
-                "Location",
-                "Distance_cm",
-                "Vehicle_Detected",
-                "Parking_Duration_s",
-                "RSSI_dBm",
-                "Latitude",
-                "Longitude",
-                "Status",
-                "Received_At",
-                "Raw_Params"
+                "Time", "Device_ID", "Location", "Distance_cm",
+                "Vehicle_Detected", "Parking_Duration_s", "RSSI_dBm",
+                "Latitude", "Longitude", "Status", "Received_At", "Raw_Params"
             ]
 
             values = sheet.get_all_values()
-
             if not values:
                 sheet.insert_row(headers, index=1)
 
             row = [
                 record.get("timestamp") or record.get("Time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                record.get("device") or record.get("Device_ID") or record.get("device_id") or "",
-                record.get("location") or record.get("Location") or "",
-                record.get("distance") or record.get("Distance") or record.get("Distance_cm") or "",
+                record.get("device")    or record.get("Device_ID")      or record.get("device_id")   or "",
+                record.get("location")  or record.get("Location")       or "",
+                record.get("distance")  or record.get("Distance")       or record.get("Distance_cm") or "",
                 record.get("vehicle_detected") or record.get("Vehicle_Detected") or record.get("vehicle") or "",
                 record.get("parking_duration") or record.get("Parking_Duration_s") or record.get("duration") or "",
-                record.get("rssi") or record.get("RSSI_dBm") or "",
-                record.get("lat") or record.get("Latitude") or "",
-                record.get("lon") or record.get("Longitude") or "",
-                record.get("Status") or record.get("status") or "",
+                record.get("rssi")      or record.get("RSSI_dBm")      or "",
+                record.get("lat")       or record.get("Latitude")       or "",
+                record.get("lon")       or record.get("Longitude")      or "",
+                record.get("Status")    or record.get("status")         or "",
                 datetime.now().isoformat(),
                 str(record)
             ]
@@ -309,25 +304,19 @@ class GoogleSheetsHandler:
             try:
                 sheet = self.spreadsheet.worksheet("Actions")
             except Exception:
-                sheet = self.spreadsheet.add_worksheet(
-                    title="Actions",
-                    rows="1000",
-                    cols="10"
-                )
+                sheet = self.spreadsheet.add_worksheet(title="Actions", rows="1000", cols="10")
 
             headers = ["Time", "Device_ID", "Action", "Note", "User", "Recorded_At"]
-
-            values = sheet.get_all_values()
-
+            values  = sheet.get_all_values()
             if not values:
                 sheet.insert_row(headers, index=1)
 
             row = [
                 action.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 action.get("device_id") or action.get("device") or "",
-                action.get("action") or "",
-                action.get("note") or "",
-                action.get("user") or "",
+                action.get("action")    or "",
+                action.get("note")      or "",
+                action.get("user")      or "",
                 datetime.now().isoformat()
             ]
 
