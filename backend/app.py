@@ -9,6 +9,7 @@ import logging
 import joblib
 import traceback
 import datetime
+import queue
 import pandas as pd
 
 from fastapi import FastAPI
@@ -1576,7 +1577,23 @@ if __name__ == '__main__':
     logging.info("Starting Traffic Management + ML Accident Detection API...")
     logging.info(f"ML Models loaded: {all([model_distance, model_impact, model_alert])}")
     logging.info(f"Google Sheets connected: {worksheet is not None}")
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    
+    # Print all registered routes
+    print("\n" + "="*60)
+    print("REGISTERED ENDPOINTS:")
+    print("="*60)
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint != 'static':
+            methods = ','.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
+            print(f"{rule.rule:50} [{methods}]")
+    print("="*60 + "\n")
+    
+    try:
+        app.run(debug=False, host='0.0.0.0', port=8000, threaded=True, use_reloader=False)
+    except Exception as e:
+        logging.error(f"Failed to start Flask app: {e}")
+        import traceback
+        traceback.print_exc()
 
 @app.route('/api/sheets/test', methods=['GET'])
 def test_sheets():

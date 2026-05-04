@@ -25,32 +25,21 @@ function AccidentDetection() {
 
   const fetchAccidents = async () => {
     try {
+      console.log("🔄 Fetching accidents from:", `${API_URL}/accidents`);
       const response = await fetch(`${API_URL}/accidents`);
       const data = await response.json();
+      
+      console.log("✅ Response received:", { status: response.status, data });
 
       if (data.success) {
         const accidents = data.accidents || [];
+        console.log(`📊 Got ${accidents.length} accident records`);
 
         const formattedHistory = accidents.map((acc) => ({
-          // Sheet header "date" → app.py stores as "date" → API returns "date"
           date: acc.date || "",
-
-          // Sheet header "Latitude" → app.py stores as "latitude" (lowercase internal)
-          // → API returns "latitude". Fallback "Latitude" covers historical records
-          // loaded directly from sheet via load_accidents_from_sheets()
           latitude: acc.latitude || acc.Latitude || "",
-
-          // Sheet header "Longitude" → app.py stores as "longitude" (lowercase internal)
-          // → API returns "longitude". Fallback "Longitude" covers historical records
           longitude: acc.longitude || acc.Longitude || "",
-
-          // Sheet header "Vibration" → app.py stores as "vibration" (lowercase internal)
-          // → API returns "vibration". Value is always "YES" or "NO"
-          // Fallback "Vibration" covers historical records
           vibration: acc.vibration || acc.Vibration || "",
-
-          // Sheet header "Distance" → app.py stores as "distance" (lowercase internal)
-          // → API returns "distance". Fallback "Distance" covers historical records
           distance: acc.distance || acc.Distance || 0
         }));
 
@@ -77,6 +66,7 @@ function AccidentDetection() {
 
         // Show latest record in top alert banner
         if (latest) {
+          console.log("🚨 Latest accident:", latest);
           setAccidentAlert({
             detected: true,
             date: latest.date,
@@ -86,9 +76,11 @@ function AccidentDetection() {
             distance: latest.distance
           });
         }
+      } else {
+        console.warn("❌ API response not successful:", data);
       }
     } catch (error) {
-      console.error("Error fetching accidents:", error);
+      console.error("💥 Error fetching accidents:", error);
     }
   };
 
