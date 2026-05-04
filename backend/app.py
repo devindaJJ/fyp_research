@@ -12,6 +12,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from google_sheets import GoogleSheetsHandler
 from traffic_routes import traffic_bp
+from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -50,6 +51,8 @@ except Exception as e:
 # --- ML models, Google Sheets worksheet, and accident detector (merged from Ishani branch) ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, 'src', 'models', 'trained')
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 logging.info(f"Looking for models in: {MODEL_PATH}")
 
@@ -85,6 +88,88 @@ except Exception as e:
 
 # Google Sheets worksheet used by ML detector (Ishani branch used gspread directly)
 worksheet = None
+
+
+def _initialize_detection_session(video_path):
+    if current_session['is_processing']:
+        current_session['is_processing'] = False
+        if current_session['processing_thread']:
+            current_session['processing_thread'].join(timeout=2)
+
+    current_session['integrator'] = VehicleDataIntegrator(speed_limit=60)
+    current_session['safety_detector'] = SafetyEventDetector(enable_lane_detection=True)
+    current_session['speed_detector'] = VehicleSpeedDetector(headless=True)
+
+    anpr_model_path = str(Path(__file__).parent.parent / "models" / "number_plate_yolo.pt")
+    current_session['anpr_detector'] = NumberPlateDetector(
+        model_path=anpr_model_path,
+        languages=["en"],
+        confidence_threshold=0.25,
+        image_size=640
+    )
+
+    current_session['is_processing'] = True
+    current_session['current_video'] = video_path
+    current_session['frame_count'] = 0
+
+    thread = threading.Thread(target=process_video_in_background, daemon=True)
+    thread.start()
+    current_session['processing_thread'] = thread
+
+
+@app.route('/api/detection/upload', methods=['POST'])
+def upload_detection_video():
+    """Upload a local video file and start detection."""
+    try:
+        if 'video_file' not in request.files:
+            return jsonify({
+                "success": False,
+                "error": "No video file provided"
+            }), 400
+
+        video_file = request.files['video_file']
+        if video_file.filename == '':
+            return jsonify({
+                "success": False,
+                "error": "No video file selected"
+            }), 400
+
+        filename = secure_filename(video_file.filename)
+        if not filename:
+            return jsonify({
+                "success": False,
+                "error": "Invalid video file name"
+            }), 400
+
+        saved_name = f"{int(time.time())}_{filename}"
+        saved_path = os.path.join(UPLOAD_FOLDER, saved_name)
+        video_file.save(saved_path)
+
+        test_cap = cv2.VideoCapture(saved_path)
+        if not test_cap.isOpened():
+            test_cap.release()
+            os.remove(saved_path)
+            return jsonify({
+                "success": False,
+                "error": "Cannot open uploaded video file. Check if the file is a valid video format."
+            }), 400
+        test_cap.release()
+
+        print(f"[INFO] Uploaded detection video saved to: {saved_path}")
+        _initialize_detection_session(saved_path)
+
+        return jsonify({
+            "success": True,
+            "message": "Detection session started",
+            "video": saved_path
+        })
+    except Exception as e:
+        print(f"[ERROR] Upload detection failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 
 def init_google_sheets():
     try:

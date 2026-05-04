@@ -20,7 +20,7 @@ export default function ViolationDetection() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState('all')
-  const [videoPath, setVideoPath] = useState('')
+  const [videoFile, setVideoFile] = useState(null)
 
   // Check detection status on mount
   useEffect(() => {
@@ -128,16 +128,18 @@ export default function ViolationDetection() {
   }
 
   const startDetection = async () => {
-    if (!videoPath) {
-      alert('Please enter a video path')
+    if (!videoFile) {
+      alert('Please select a video file')
       return
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/detection/start`, {
+      const formData = new FormData()
+      formData.append('video_file', videoFile)
+
+      const res = await fetch(`${API_BASE_URL}/detection/upload`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_path: videoPath })
+        body: formData
       })
       const data = await res.json()
       if (data.success) {
@@ -202,14 +204,24 @@ export default function ViolationDetection() {
       <div className="control-panel">
         <h3>🎥 Detection Control</h3>
         <div className="control-row">
-          <input
-            type="text"
-            placeholder="Enter video path (e.g., videos/traffic.mp4)"
-            value={videoPath}
-            onChange={(e) => setVideoPath(e.target.value)}
-            disabled={isMonitoring}
-            className="video-input"
-          />
+          <label className="file-upload-container">
+            <div className="file-upload-row">
+              <span className="upload-label">Select video file</span>
+              <button type="button" className="btn btn-file" disabled={isMonitoring}>
+                {videoFile ? 'Change file' : 'Choose file'}
+              </button>
+            </div>
+            <span className="file-upload-text">
+              {videoFile ? videoFile.name : 'No video selected. Accepted formats: .mp4, .mov, .avi'}
+            </span>
+            <input
+              type="file"
+              accept="video/*"
+              onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+              disabled={isMonitoring}
+              className="hidden-file-input"
+            />
+          </label>
           {!isMonitoring ? (
             <button onClick={startDetection} className="btn btn-start">
               ▶️ Start Detection
