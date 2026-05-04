@@ -29,11 +29,30 @@ from google.oauth2.service_account import Credentials as ServiceAccountCredentia
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.integration import VehicleDataIntegrator
-from src.utils.safety_detector import SafetyEventDetector
-from src.utils.exporter import ResultExporter
-from src.speed.detector import VehicleSpeedDetector
-from src.anpr.detector import NumberPlateDetector
+# Heavy ML imports are deferred to first use to avoid blocking gunicorn startup
+VehicleDataIntegrator = None
+SafetyEventDetector = None
+ResultExporter = None
+VehicleSpeedDetector = None
+NumberPlateDetector = None
+
+def _load_ml_modules():
+    global VehicleDataIntegrator, SafetyEventDetector, ResultExporter, VehicleSpeedDetector, NumberPlateDetector
+    if VehicleDataIntegrator is not None:
+        return
+    try:
+        from src.utils.integration import VehicleDataIntegrator as _VDI
+        from src.utils.safety_detector import SafetyEventDetector as _SED
+        from src.utils.exporter import ResultExporter as _RE
+        from src.speed.detector import VehicleSpeedDetector as _VSD
+        from src.anpr.detector import NumberPlateDetector as _NPD
+        VehicleDataIntegrator = _VDI
+        SafetyEventDetector = _SED
+        ResultExporter = _RE
+        VehicleSpeedDetector = _VSD
+        NumberPlateDetector = _NPD
+    except Exception as e:
+        logging.warning(f"ML modules could not be loaded: {e}")
 
 # Global variables to store current session data
 current_session = {
@@ -1028,6 +1047,7 @@ def get_vehicle_violations(track_id):
 @app.route('/api/detection/start', methods=['POST'])
 def start_detection():
     """Start a new detection session"""
+    _load_ml_modules()
     try:
         data = request.json
         video_path = data.get('video_path')
@@ -1195,6 +1215,7 @@ def get_detection_stats():
 @app.route('/api/detection/export', methods=['POST'])
 def export_detection_data():
     """Export detection results"""
+    _load_ml_modules()
     if not current_session['integrator']:
         return jsonify({
             "success": False,
