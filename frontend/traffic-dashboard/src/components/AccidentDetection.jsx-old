@@ -1,34 +1,25 @@
 import React, { useEffect, useState } from "react";
 
-const API_URL = `${import.meta.env.VITE_API_BASE_URL}/api`;
+const API_URL = "http://localhost:8000/api";
 
 function AccidentDetection() {
-  // FIX: removed old fields (location, time, severity, totalImpacts) that don't exist in backend response.
-  // Backend /api/accidents returns: { date, latitude, longitude, vibration, distance }
   const [accidentAlert, setAccidentAlert] = useState({
     detected: false,
-    date: "",
-    latitude: "",
-    longitude: "",
-    vibration: "",
-    distance: 0
+    location: "",
+    severity: "",
+    time: "",
+    distance: 0,
+    totalImpacts: 0
   });
 
   const [accidentHistory, setAccidentHistory] = useState([]);
-
-  // FIX: statistics now matches what fetchAccidents() actually computes from accident records
-  // (vibrationYes, vibrationNo, latestDistance) — also keep fetchStatistics() fields separately
   const [statistics, setStatistics] = useState({
     total: 0,
     last24h: 0,
     activeAlerts: 0,
     connectedDevices: 0,
-    mlActive: false,
-    vibrationYes: 0,
-    vibrationNo: 0,
-    latestDistance: 0
+    mlActive: false
   });
-
   const [alerts, setAlerts] = useState([]);
   const [devices, setDevices] = useState([]);
 
@@ -47,86 +38,62 @@ function AccidentDetection() {
     high: "#f44336",
     critical: "#d32f2f",
     medium: "#ff9800",
-    low: "#4caf50",
-    YES: "#f44336",   // FIX: vibration "YES" maps to red
-    NO: "#4caf50"     // FIX: vibration "NO" maps to green
+    low: "#4caf50"
   };
 
-  // FIX: severity is no longer in backend response — derive from vibration field instead
-  const getVibrationColor = (vibration) => {
-    return String(vibration).toUpperCase() === "YES"
-      ? severityColors.YES
-      : severityColors.NO;
-  };
-
-  // FIX: alert style now uses vibration instead of missing severity field
   const getAlertStyle = () => ({
-    backgroundColor:
-      String(accidentAlert.vibration).toUpperCase() === "YES" ? "#f44336" : "#4caf50",
-    color: "#fff"
+    backgroundColor: severityColors[accidentAlert.severity] || "#ddd",
+    color: ["low"].includes(accidentAlert.severity) ? "#000" : "#fff"
   });
 
-  // FIX: blink only when vibration is YES (previously used severity which doesn't exist)
-  const blinkStyle =
-    String(accidentAlert.vibration).toUpperCase() === "YES"
-      ? { animation: "blink 1s infinite" }
-      : {};
+  const blinkStyle = ["high", "critical"].includes(accidentAlert.severity)
+    ? { animation: "blink 1s infinite" }
+    : {};
 
   // Fetch accidents from backend
   const fetchAccidents = async () => {
     try {
-      const response = await fetch(`${API_URL}/accidents`);
+      const response = await fetch(`${API_URL}/accidents?hours=24`);
       const data = await response.json();
-
-      console.log("API RESPONSE:", data);
-
-      const accidents = Array.isArray(data)
-        ? data
-        : data.accidents || [];
-
-      // FIX: map exactly the fields backend sends: date, latitude, longitude, vibration, distance
-      // Removed: time, location, severity, totalImpacts — these do NOT exist in the backend response
-      const formattedHistory = accidents.map((acc) => ({
-        date: acc.date || "",               // FIX: backend key is "date" (matches sheet header "date")
-        latitude: acc.latitude || "",       // FIX: backend key is "latitude" (lowercase, internal use)
-        longitude: acc.longitude || "",     // FIX: backend key is "longitude" (lowercase, internal use)
-        vibration: acc.vibration || "",     // FIX: backend key is "vibration" (lowercase, internal use) — value is "YES"/"NO"
-        distance: acc.distance || 0         // FIX: backend key is "distance" (lowercase, internal use)
-      }));
-
-      setAccidentHistory(formattedHistory);
-
-      const vibrationYes = formattedHistory.filter(
-        (x) => String(x.vibration).toUpperCase() === "YES"
-      ).length;
-
-      const vibrationNo = formattedHistory.filter(
-        (x) => String(x.vibration).toUpperCase() !== "YES"
-      ).length;
-
-      const latest = formattedHistory[formattedHistory.length - 1];
-
-      // FIX: update only accident-derived stats here; fetchStatistics() updates the rest
-      setStatistics((prev) => ({
-        ...prev,
-        total: formattedHistory.length,
-        vibrationYes,
-        vibrationNo,
-        latestDistance: latest ? latest.distance : 0
-      }));
-
-      // FIX: set alert from actual backend fields — removed severity/location/time/totalImpacts
-      if (latest) {
-        setAccidentAlert({
-          detected: true,
-          date: latest.date,
-          latitude: latest.latitude,
-          longitude: latest.longitude,
-          vibration: latest.vibration,
-          distance: latest.distance
-        });
+      
+      if (data.success) {
+        const accidents = data.accidents;
+        
+        // Update history
+        const formattedHistory = accidents.map(acc => ({
+          severity: acc.severity,
+          time: new Date(acc.timestamp).toLocaleTimeString(),
+          location: acc.location,
+          date: new Date(acc.timestamp),
+          distance: acc.distance,
+          totalImpacts: acc.total_impacts
+        }));
+        setAccidentHistory(formattedHistory);
+        
+        // Update monthly counts
+        if (data.severity_counts) {
+          setMonthlyData(prev => ({
+            ...prev,
+            low: data.severity_counts.low || 0,
+            medium: data.severity_counts.medium || 0,
+            high: data.severity_counts.high || 0,
+            critical: data.severity_counts.critical || 0
+          }));
+        }
+        
+        // Update current alert with latest accident
+        if (accidents.length > 0) {
+          const latest = accidents[accidents.length - 1];
+          setAccidentAlert({
+            detected: true,
+            location: latest.location,
+            severity: latest.severity,
+            time: new Date(latest.timestamp).toLocaleTimeString(),
+            distance: latest.distance,
+            totalImpacts: latest.total_impacts
+          });
+        }
       }
-
     } catch (error) {
       console.error("Error fetching accidents:", error);
     }
@@ -137,32 +104,29 @@ function AccidentDetection() {
     try {
       const response = await fetch(`${API_URL}/alerts`);
       const data = await response.json();
-
+      
       if (data.success) {
-        // FIX: backend alerts may not have a "read" field — default to false if missing
-        setAlerts((data.alerts || []).map(a => ({ ...a, read: a.read ?? false })));
+        setAlerts(data.alerts);
       }
     } catch (error) {
       console.error("Error fetching alerts:", error);
     }
   };
 
-  // Fetch statistics from /api/statistics
+  // Fetch statistics
   const fetchStatistics = async () => {
     try {
       const response = await fetch(`${API_URL}/statistics`);
       const data = await response.json();
-
+      
       if (data.success) {
-        // FIX: merge backend statistics without overwriting accident-derived stats (vibrationYes etc)
-        setStatistics((prev) => ({
-          ...prev,
+        setStatistics({
           total: data.statistics.total_accidents,
           last24h: data.statistics.accidents_last_24h,
           activeAlerts: data.statistics.active_alerts,
           connectedDevices: data.statistics.connected_devices,
           mlActive: data.statistics.ml_models_active
-        }));
+        });
       }
     } catch (error) {
       console.error("Error fetching statistics:", error);
@@ -174,7 +138,7 @@ function AccidentDetection() {
     try {
       const response = await fetch(`${API_URL}/devices`);
       const data = await response.json();
-
+      
       if (data.success) {
         setDevices(data.devices);
       }
@@ -183,32 +147,42 @@ function AccidentDetection() {
     }
   };
 
-  // Initial load + polling every 5 seconds
+  // Initial load
   useEffect(() => {
     fetchAccidents();
     fetchAlerts();
     fetchStatistics();
     fetchDevices();
-
+    
+    // Refresh every 5 seconds
     const interval = setInterval(() => {
       fetchAccidents();
       fetchAlerts();
       fetchStatistics();
       fetchDevices();
     }, 5000);
-
+    
     return () => clearInterval(interval);
   }, []);
 
-  // Sound alerts — FIX: trigger based on vibration field (YES = alarm) instead of missing severity
+  // Sound alerts
   useEffect(() => {
     if (!accidentAlert.detected) return;
 
     let soundUrl = "";
-    if (String(accidentAlert.vibration).toUpperCase() === "YES") {
-      soundUrl = "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg";
-    } else {
-      soundUrl = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg";
+    switch (accidentAlert.severity) {
+      case "high":
+      case "critical":
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg";
+        break;
+      case "medium":
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/beep_short.ogg";
+        break;
+      case "low":
+        soundUrl = "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg";
+        break;
+      default:
+        return;
     }
 
     const audio = new Audio(soundUrl);
@@ -229,8 +203,7 @@ function AccidentDetection() {
 
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif", backgroundColor: "#f5f5f5", minHeight: "100vh" }}>
-
-      {/* Top alert — FIX: now shows actual backend fields (date, latitude, longitude, vibration, distance) */}
+      {/* Top alert */}
       {accidentAlert.detected && (
         <div
           style={{
@@ -243,16 +216,13 @@ function AccidentDetection() {
             boxShadow: "0 4px 8px rgba(0,0,0,0.2)"
           }}
         >
-          🚨 ACCIDENT ALERT — Vibration: {accidentAlert.vibration}
+          🚨 ACCIDENT ALERT ({accidentAlert.severity.toUpperCase()})
           <br />
-          {/* FIX: was accidentAlert.location — backend sends latitude+longitude separately */}
-          📍 Location: {accidentAlert.latitude}, {accidentAlert.longitude}
+          📍 Location: {accidentAlert.location}
           <br />
-          {/* FIX: was accidentAlert.time — backend sends "date" field */}
-          ⏰ Time: {accidentAlert.date}
+          ⏰ Time: {accidentAlert.time}
           <br />
-          {/* FIX: was accidentAlert.totalImpacts — backend does NOT send this field */}
-          📏 Distance: {accidentAlert.distance} cm
+          📏 Distance: {accidentAlert.distance}cm | 💥 Impacts: {accidentAlert.totalImpacts}
         </div>
       )}
 
@@ -268,14 +238,18 @@ function AccidentDetection() {
       }}>
         <h3>📊 System Status</h3>
         <div style={{ display: "flex", gap: "30px", flexWrap: "wrap" }}>
-          <div><strong>Total Records:</strong> {statistics.total}</div>
-          <div><strong>Last 24h:</strong> {statistics.last24h}</div>
-          <div><strong>Active Alerts:</strong> {statistics.activeAlerts}</div>
-          <div><strong>Connected Devices:</strong> {statistics.connectedDevices}</div>
-          {/* FIX: added Vibration YES/NO counts from accident data */}
-          <div><strong>Vibration YES:</strong> <span style={{ color: "#f44336" }}>{statistics.vibrationYes}</span></div>
-          <div><strong>Vibration NO:</strong> <span style={{ color: "#4caf50" }}>{statistics.vibrationNo}</span></div>
-          <div><strong>Latest Distance:</strong> {statistics.latestDistance} cm</div>
+          <div>
+            <strong>Total Accidents:</strong> {statistics.total}
+          </div>
+          <div>
+            <strong>Last 24h:</strong> {statistics.last24h}
+          </div>
+          <div>
+            <strong>Active Alerts:</strong> {statistics.activeAlerts}
+          </div>
+          <div>
+            <strong>Connected Devices:</strong> {statistics.connectedDevices}
+          </div>
           <div>
             <strong>ML Models:</strong>{" "}
             <span style={{ color: statistics.mlActive ? "green" : "red" }}>
@@ -287,7 +261,7 @@ function AccidentDetection() {
 
       {/* Dashboard */}
       <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "40px" }}>
-        {/* Severity Distribution */}
+        {/* Monthly Accident Rating */}
         <div style={{
           flex: "1",
           minWidth: "300px",
@@ -345,9 +319,6 @@ function AccidentDetection() {
         }}>
           <h3 style={{ textAlign: "center" }}>📡 Connected Devices ({devices.length})</h3>
           <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-            {devices.length === 0 && (
-              <p style={{ color: "#999", textAlign: "center" }}>No devices connected</p>
-            )}
             {devices.map((device, index) => (
               <div key={index} style={{
                 padding: "10px",
@@ -360,10 +331,7 @@ function AccidentDetection() {
                 <div style={{ fontSize: "0.9em", color: "#666" }}>
                   📍 {device.location}
                   <br />
-                  {/* FIX: was device.total_impacts — backend sends device.vibration instead */}
-                  📏 Distance: {device.distance} cm | 💥 Vibration: {device.vibration}
-                  <br />
-                  🕐 Last seen: {device.last_seen}
+                  📏 {device.distance}cm | 💥 {device.total_impacts} impacts
                 </div>
               </div>
             ))}
@@ -373,7 +341,7 @@ function AccidentDetection() {
 
       {/* Accident Records Table */}
       <div style={{ marginBottom: "40px" }}>
-        <h3>🚗 Accident Records</h3>
+        <h3>🚗 Accident Records (Last 24h)</h3>
         {accidentHistory.length > 0 ? (
           <div style={{ overflowX: "auto" }}>
             <table style={{
@@ -385,38 +353,31 @@ function AccidentDetection() {
             }}>
               <thead style={{ backgroundColor: "#f2f2f2" }}>
                 <tr>
-                  {/* FIX: table columns now match actual backend fields exactly */}
-                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Date</th>
-                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Latitude</th>
-                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Longitude</th>
-                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Vibration</th>
+                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Time</th>
+                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Location</th>
                   <th style={{ padding: "12px", border: "1px solid #ddd" }}>Distance (cm)</th>
+                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Impacts</th>
+                  <th style={{ padding: "12px", border: "1px solid #ddd" }}>Severity</th>
                 </tr>
               </thead>
               <tbody>
                 {accidentHistory.map((acc, index) => (
                   <tr key={index} style={{ borderBottom: "1px solid #ddd" }}>
-                    {/* FIX: was acc.time → now acc.date (matches backend field) */}
-                    <td style={{ padding: "12px" }}>{acc.date}</td>
-                    {/* FIX: was acc.location → now acc.latitude and acc.longitude separately */}
-                    <td style={{ padding: "12px" }}>{acc.latitude}</td>
-                    <td style={{ padding: "12px" }}>{acc.longitude}</td>
-                    {/* FIX: was acc.totalImpacts → now acc.vibration (YES/NO from backend) */}
+                    <td style={{ padding: "12px" }}>{acc.time}</td>
+                    <td style={{ padding: "12px" }}>{acc.location}</td>
+                    <td style={{ padding: "12px" }}>{acc.distance}</td>
+                    <td style={{ padding: "12px" }}>{acc.totalImpacts}</td>
                     <td style={{
                       padding: "12px",
-                      color: getVibrationColor(acc.vibration),
+                      color: severityColors[acc.severity],
                       fontWeight: "bold"
-                    }}>
-                      {acc.vibration}
-                    </td>
-                    {/* FIX: was acc.severity → now acc.distance (severity doesn't exist in backend) */}
-                    <td style={{ padding: "12px" }}>{acc.distance}</td>
+                    }}>{acc.severity.toUpperCase()}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <p>No accident records found</p>}
+        ) : <p>No accident records in the last 24 hours</p>}
       </div>
 
       {/* Active Alerts */}
@@ -429,7 +390,7 @@ function AccidentDetection() {
                 backgroundColor: "#fff",
                 padding: "15px",
                 borderRadius: "8px",
-                borderLeft: `5px solid ${severityColors[alert.severity] || "#999"}`,
+                borderLeft: `5px solid ${severityColors[alert.severity]}`,
                 boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
               }}>
                 <strong>{alert.title}</strong>
